@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+out/
+
+# Development files
+.git/
+.gitignore
+*.md
+*.log
+*.tar.gz
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env.local
+.env*.local
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Deploy script
+deploy.sh
+
+# Netlify
+netlify.toml
