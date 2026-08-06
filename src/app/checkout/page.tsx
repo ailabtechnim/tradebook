@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 export default function CheckoutPage() {
-  const { cart, cartTotal, clearCart, showToast } = useApp();
+  const { cart, cartTotal, clearCart, showToast, placeOrder, user } = useApp();
   const [step, setStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState('mtn');
   const [orderPlaced, setOrderPlaced] = useState(false);
@@ -211,6 +211,49 @@ export default function CheckoutPage() {
   };
 
   const handleConfirmOrderSuccess = () => {
+    // Group cart items by manufacturer, or create an order per manufacturer to keep it correct
+    const manufacturersInCart = Array.from(new Set(cart.map(item => item.manufacturerId)));
+    
+    manufacturersInCart.forEach(mfrId => {
+      const mfrItems = cart.filter(item => item.manufacturerId === mfrId);
+      const mfrName = mfrItems[0]?.manufacturerName || 'Manufacturer';
+      const subtotal = mfrItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+      const fee = Math.round(subtotal * 0.015);
+      const mfrTotal = subtotal + fee;
+
+      const newOrder: any = {
+        id: (generatedOrderId + '-' + mfrId.split('-')[1]).toLowerCase(),
+        buyerId: user?.id || 'demo-user',
+        buyerName: user?.name || 'Jean-Pierre Habimana',
+        manufacturerId: mfrId,
+        manufacturerName: mfrName,
+        products: mfrItems.map(item => ({
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.unitPrice * item.quantity
+        })),
+        totalAmount: mfrTotal,
+        currency: 'RWF',
+        status: 'pending',
+        paymentStatus: 'escrow',
+        createdAt: new Date().toISOString().split('T')[0],
+        updatedAt: new Date().toISOString().split('T')[0],
+        shippingAddress: `${shippingInfo.address}, ${shippingInfo.city}, ${shippingInfo.district}, Rwanda`,
+        trackingNumber: `TB-TRK-${Math.random().toString(36).substring(3, 8).toUpperCase()}`,
+        escrowDetails: {
+          amount: mfrTotal,
+          status: 'held',
+          heldSince: new Date().toISOString().split('T')[0],
+          releaseDate: null,
+          conditions: ['Delivery confirmed by buyer', 'Product quality verified']
+        }
+      };
+
+      placeOrder(newOrder);
+    });
+
     setOrderPlaced(true);
     setShowSimModal(false);
     clearCart();
