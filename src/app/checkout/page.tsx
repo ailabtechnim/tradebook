@@ -5,12 +5,23 @@ import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import {
   Shield, CreditCard, Smartphone, Building, MapPin, Truck, Lock, CheckCircle,
-  ArrowLeft, Loader2, AlertTriangle, Upload, Eye, FileText, Check, X, SmartphoneIcon
+  ArrowLeft, Loader2, AlertTriangle, Upload, Eye, FileText, Check, X, SmartphoneIcon,
+  Store, Mail, Phone, User as UserIcon, KeyRound
 } from 'lucide-react';
 
 export default function CheckoutPage() {
-  const { cart, cartTotal, clearCart, showToast, placeOrder, user } = useApp();
+  const { cart, cartTotal, cartCount, clearCart, showToast, placeOrder, user, isLoggedIn, authHydrated, login, register } = useApp();
   const [step, setStep] = useState(1);
+
+  // Wholesaler authentication wall state
+  const [wholesalerAuthMode, setWholesalerAuthMode] = useState<'login' | 'signup'>('signup');
+  const [buyerCreds, setBuyerCreds] = useState({
+    shopName: '',
+    email: '',
+    phone: '',
+    city: '',
+    password: '',
+  });
   const [paymentMethod, setPaymentMethod] = useState('mtn');
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [generatedOrderId, setGeneratedOrderId] = useState('');
@@ -60,6 +71,49 @@ export default function CheckoutPage() {
     // Generate a unique order ID once checkout starts
     setGeneratedOrderId(`TB-2026-${Math.random().toString(36).substring(3, 9).toUpperCase()}`);
   }, []);
+
+  // Once the wholesaler is authenticated, unlock checkout and pre-fill their
+  // business contact details into the shipping form automatically.
+  useEffect(() => {
+    if (user) {
+      setShippingInfo(prev => ({
+        ...prev,
+        fullName: user.name || prev.fullName,
+        phone: user.phone || prev.phone,
+        city: user.location ? user.location.split(',')[0].trim() : prev.city,
+      }));
+      setCardInfo(prev => ({ ...prev, holder: user.name || prev.holder }));
+    }
+  }, [user]);
+
+  // Wholesaler portal: create a new wholesale buyer account (sign-up).
+  const handleWholesalerSignup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!buyerCreds.shopName.trim()) return showToast('Please enter your Retail Shop Name.', 'error');
+    if (!buyerCreds.email.trim() || !buyerCreds.email.includes('@')) return showToast('Please enter a valid Business Email.', 'error');
+    if (!buyerCreds.phone.trim()) return showToast('Please enter your Contact Phone number.', 'error');
+    if (!buyerCreds.city.trim()) return showToast('Please enter your Location / City.', 'error');
+    if (buyerCreds.password.length < 4) return showToast('Password must be at least 4 characters.', 'error');
+
+    register({
+      name: buyerCreds.shopName,
+      email: buyerCreds.email,
+      phone: buyerCreds.phone,
+      type: 'retailer',
+      location: `${buyerCreds.city}, Rwanda`,
+      avatar: '🏪',
+      password: buyerCreds.password,
+    });
+    showToast(`Welcome, ${buyerCreds.shopName}! Your wholesale checkout is now unlocked.`, 'success');
+  };
+
+  // Wholesaler portal: sign in with an existing wholesale buyer account.
+  const handleWholesalerLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!buyerCreds.email.trim()) return showToast('Please enter your account email.', 'error');
+    if (!buyerCreds.password) return showToast('Please enter your password.', 'error');
+    login(buyerCreds.email, buyerCreds.password);
+  };
 
   const formatPrice = (price: number) => new Intl.NumberFormat('en-RW').format(price);
   const escrowFee = Math.round(cartTotal * 0.015);
@@ -319,6 +373,188 @@ export default function CheckoutPage() {
               Keep Shopping
             </Link>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Wait for the persisted session to load before deciding whether the
+  // wholesaler gate applies (avoids flashing the wall at signed-in buyers).
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 size={32} className="text-teal-600 animate-spin" />
+      </div>
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // AUTHENTICATION-FIRST GUARD: Wholesaler Portal Access
+  // Anonymous visitors (or non-wholesaler accounts) must create / sign in
+  // to a wholesale buyer account before the escrow checkout unlocks.
+  // ────────────────────────────────────────────────────────────────
+  if (!isLoggedIn || user?.type !== 'retailer') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="container-app py-8 max-w-2xl">
+          <Link href="/cart" className="flex items-center gap-1 text-teal-600 text-sm font-medium hover:text-teal-700 mb-6">
+            <ArrowLeft size={16} /> Back to Cart
+          </Link>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-fade-in">
+            {/* Header */}
+            <div className="gradient-primary p-8 text-white text-center">
+              <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Store size={28} />
+              </div>
+              <h1 className="text-2xl font-bold">Wholesaler Portal Access</h1>
+              <p className="text-teal-50 text-sm mt-2 max-w-md mx-auto">
+                Checkout is reserved for registered wholesale buyers. Sign in or create your free wholesaler account to proceed with your escrow-protected order.
+              </p>
+            </div>
+
+            {/* Signed-in-as-wrong-role warning */}
+            {isLoggedIn && user?.type !== 'retailer' && (
+              <div className="mx-6 md:mx-8 mt-6 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800">
+                  <p className="font-bold">You are signed in as a manufacturer account ({user?.email}).</p>
+                  <p className="mt-1">Escrow wholesale checkout requires a registered wholesaler (retail shop) buyer account. Create one below with your shop&apos;s business email to continue.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Mode Tabs */}
+            <div className="flex border-b border-gray-100">
+              <button
+                onClick={() => setWholesalerAuthMode('signup')}
+                className={`flex-1 py-3.5 text-sm font-semibold transition ${wholesalerAuthMode === 'signup' ? 'text-teal-700 border-b-2 border-teal-600 bg-teal-50/50' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                Create Wholesaler Account
+              </button>
+              <button
+                onClick={() => setWholesalerAuthMode('login')}
+                className={`flex-1 py-3.5 text-sm font-semibold transition ${wholesalerAuthMode === 'login' ? 'text-teal-700 border-b-2 border-teal-600 bg-teal-50/50' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                Sign In
+              </button>
+            </div>
+
+            {/* Sign-up form */}
+            {wholesalerAuthMode === 'signup' && (
+              <form onSubmit={handleWholesalerSignup} className="p-6 md:p-8 space-y-4">
+                <div className="relative">
+                  <Store className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Retail Shop Name (e.g., Kimironko Mini Mart)"
+                    value={buyerCreds.shopName}
+                    onChange={(e) => setBuyerCreds({ ...buyerCreds, shopName: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="email"
+                    placeholder="Business Email Address"
+                    value={buyerCreds.email}
+                    onChange={(e) => setBuyerCreds({ ...buyerCreds, email: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="tel"
+                    placeholder="Contact Phone (e.g., +250 788 000 000)"
+                    value={buyerCreds.phone}
+                    onChange={(e) => setBuyerCreds({ ...buyerCreds, phone: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Location / City (e.g., Kigali)"
+                    value={buyerCreds.city}
+                    onChange={(e) => setBuyerCreds({ ...buyerCreds, city: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="password"
+                    placeholder="Create Account Password"
+                    value={buyerCreds.password}
+                    onChange={(e) => setBuyerCreds({ ...buyerCreds, password: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+
+                <button type="submit" className="w-full py-3.5 gradient-primary text-white font-bold rounded-xl hover:opacity-95 transition flex items-center justify-center gap-2 shadow-sm">
+                  <Lock size={16} /> Create Account & Unlock Checkout
+                </button>
+
+                <div className="flex items-center gap-2 justify-center text-[11px] text-gray-400 pt-1">
+                  <Shield size={12} className="text-teal-500" />
+                  <span>Your order will be protected by TradeBook Escrow until delivery is confirmed.</span>
+                </div>
+              </form>
+            )}
+
+            {/* Sign-in form */}
+            {wholesalerAuthMode === 'login' && (
+              <form onSubmit={handleWholesalerLogin} className="p-6 md:p-8 space-y-4">
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="email"
+                    placeholder="Business Email Address"
+                    value={buyerCreds.email}
+                    onChange={(e) => setBuyerCreds({ ...buyerCreds, email: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="password"
+                    placeholder="Account Password"
+                    value={buyerCreds.password}
+                    onChange={(e) => setBuyerCreds({ ...buyerCreds, password: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+
+                <button type="submit" className="w-full py-3.5 gradient-primary text-white font-bold rounded-xl hover:opacity-95 transition flex items-center justify-center gap-2 shadow-sm">
+                  <UserIcon size={16} /> Sign In & Continue to Checkout
+                </button>
+
+                <p className="text-center text-xs text-gray-500">
+                  New wholesale buyer?{' '}
+                  <button type="button" onClick={() => setWholesalerAuthMode('signup')} className="text-teal-600 font-semibold hover:underline">
+                    Create a free wholesaler account
+                  </button>
+                </p>
+              </form>
+            )}
+          </div>
+
+          {/* Order preview reminder */}
+          {cartCount > 0 && (
+            <div className="mt-4 bg-teal-50 border border-teal-100 rounded-xl p-4 flex items-center gap-3 animate-fade-in">
+              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 border border-teal-100">
+                <Truck size={18} className="text-teal-600" />
+              </div>
+              <div className="text-xs text-teal-800">
+                <p className="font-bold">Your cart is saved and waiting!</p>
+                <p className="mt-0.5">{cartCount} item{cartCount > 1 ? 's' : ''} totalling <strong>{formatPrice(cartTotal)} RWF</strong> will be ready in Step 1 (Shipping &amp; Delivery) as soon as you sign in.</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -15,9 +15,12 @@ export default function AuthModal() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (authModalType === 'login') {
-      login(formData.email, formData.password);
+      // login returns false for unknown emails or wrong passwords and keeps
+      // the modal open so the user can correct their credentials.
+      const ok = login(formData.email, formData.password);
+      if (!ok) return;
     } else {
-      register({ name: formData.name, email: formData.email, phone: formData.phone, type: formData.type, location: formData.location });
+      register({ name: formData.name, email: formData.email, phone: formData.phone, type: formData.type, location: formData.location, password: formData.password });
     }
   };
 

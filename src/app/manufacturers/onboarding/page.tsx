@@ -7,13 +7,23 @@ import { useApp } from '@/context/AppContext';
 import { categories } from '@/data/mockData';
 import {
   Building2, Package, Video, Shield, ArrowLeft, ArrowRight, CheckCircle,
-  Upload, Sparkles, Phone, Mail, MapPin, Globe, Clock, Award, FileText, Check, AlertCircle
+  Upload, Sparkles, Phone, Mail, MapPin, Globe, Clock, Award, FileText, Check, AlertCircle,
+  User as UserIcon, KeyRound, Lock, Loader2, LogOut
 } from 'lucide-react';
 
 export default function ManufacturerOnboardingPage() {
   const router = useRouter();
-  const { addManufacturer, addProduct, addStory, setUser, showToast } = useApp();
+  const { addManufacturer, addProduct, addStory, updateUser, showToast, user, isLoggedIn, authHydrated, login, register, logout } = useApp();
   const [step, setStep] = useState(1);
+
+  // Phase A: Corporate account credentials (email account first)
+  const [mfrAuthMode, setMfrAuthMode] = useState<'signup' | 'login'>('signup');
+  const [corpAccount, setCorpAccount] = useState({
+    contactName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+  });
 
   // Step 1: Manufacturer Profile State
   const [mfrInfo, setMfrInfo] = useState({
@@ -83,6 +93,39 @@ export default function ManufacturerOnboardingPage() {
     if (!storyInfo.title.trim()) return 'Story/Video Title is required.';
     if (!storyInfo.description.trim()) return 'Story/Video Description is required.';
     return null;
+  };
+
+  // ── Phase A: Corporate account creation (sign-up first) ──
+  const handleCorpSignup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!corpAccount.contactName.trim()) return showToast('Contact Person Name is required.', 'error');
+    if (!corpAccount.email.trim() || !corpAccount.email.includes('@')) return showToast('A valid Corporate Email is required.', 'error');
+    if (corpAccount.password.length < 4) return showToast('Account Password must be at least 4 characters.', 'error');
+    if (corpAccount.password !== corpAccount.confirmPassword) return showToast('Passwords do not match.', 'error');
+
+    register({
+      name: corpAccount.contactName,
+      email: corpAccount.email,
+      type: 'manufacturer',
+      avatar: '🏭',
+      location: 'Kigali, Rwanda',
+      password: corpAccount.password,
+    });
+
+    // Pre-fill the corporate email into the business profile step
+    setMfrInfo(prev => ({ ...prev, email: prev.email || corpAccount.email }));
+    showToast(`Corporate account created for ${corpAccount.contactName}! Complete your catalog to go live.`, 'success');
+  };
+
+  // ── Phase A: Returning manufacturer sign-in ──
+  const handleCorpLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!corpAccount.email.trim()) return showToast('Please enter your corporate email.', 'error');
+    if (!corpAccount.password) return showToast('Please enter your account password.', 'error');
+    const ok = login(corpAccount.email, corpAccount.password);
+    if (ok) {
+      setMfrInfo(prev => ({ ...prev, email: prev.email || corpAccount.email }));
+    }
   };
 
   const handleNextStep = () => {
@@ -214,30 +257,214 @@ export default function ManufacturerOnboardingPage() {
     addProduct(newProduct);
     addStory(newStory);
 
-    // 5. Log the newly registered manufacturer in as user session
-    const mfrUser = {
-      id: mfrId,
+    // 5. Bind the published catalog to the authenticated corporate account.
+    //    The manufacturer profile, product and story are attached to the
+    //    user ID created in the Account Registration phase (Phase A).
+    updateUser({
       name: mfrInfo.name,
-      email: mfrInfo.email,
+      email: mfrInfo.email || user?.email,
       phone: mfrInfo.phone,
-      type: 'manufacturer' as const,
+      type: 'manufacturer',
       avatar: mfrInfo.logo,
       location: `${mfrInfo.city}, Rwanda`,
-      followedManufacturers: [],
-      orders: [],
-      cart: [],
-      joinedDate: new Date().toISOString().split('T')[0],
       verified: true,
-    };
-    setUser(mfrUser);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('tradebook-user', JSON.stringify(mfrUser));
-    }
+    });
 
     showToast(`Welcome to TradeBook, ${mfrInfo.name}! Your profile is now live.`, 'success');
     router.push(`/manufacturers/${mfrId}`);
   };
 
+  // Wait for the persisted session to hydrate before evaluating the gate.
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 size={32} className="text-teal-600 animate-spin" />
+      </div>
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // AUTHENTICATION-FIRST GUARD: Phase A — Corporate Account
+  // Manufacturers must create (or sign in to) a corporate email account
+  // before the catalog onboarding wizard unlocks.
+  // ────────────────────────────────────────────────────────────────
+  if (!isLoggedIn || user?.type !== 'manufacturer') {
+    return (
+      <div className="min-h-screen bg-gray-50 py-10">
+        <div className="container-app max-w-xl">
+          <Link href="/" className="flex items-center gap-1.5 text-teal-600 text-sm font-semibold hover:text-teal-700 mb-6">
+            <ArrowLeft size={16} /> Back to Home
+          </Link>
+
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden animate-fade-in">
+            {/* Header */}
+            <div className="gradient-primary p-8 text-white text-center">
+              <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Building2 size={28} />
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 rounded-full text-white/90 text-[11px] font-bold mb-3 uppercase tracking-wider">
+                <Shield size={11} /> Step 1 of onboarding — Account first
+              </div>
+              <h1 className="text-2xl font-extrabold tracking-tight">Create Your Corporate Account</h1>
+              <p className="text-teal-50 text-sm mt-2 max-w-md mx-auto">
+                Register with your corporate email to unlock the manufacturer catalog wizard. Your products and production stories will be bound to this account.
+              </p>
+            </div>
+
+            {/* Signed-in-as-wrong-role warning */}
+            {isLoggedIn && user?.type !== 'manufacturer' && (
+              <div className="mx-6 md:mx-8 mt-6 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800">
+                  <p className="font-bold">You are signed in as a {user?.type === 'retailer' ? 'retail buyer' : 'customer'} account ({user?.email}).</p>
+                  <p className="mt-1">Manufacturer onboarding requires a corporate manufacturer account. Sign out and register with your factory&apos;s corporate email.</p>
+                  <button
+                    onClick={logout}
+                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700 transition"
+                  >
+                    <LogOut size={12} /> Sign Out & Switch to Manufacturer
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Mode tabs (only meaningful when fully anonymous) */}
+            {!isLoggedIn && (
+              <div className="flex border-b border-gray-100">
+                <button
+                  onClick={() => setMfrAuthMode('signup')}
+                  className={`flex-1 py-3.5 text-sm font-semibold transition ${mfrAuthMode === 'signup' ? 'text-teal-700 border-b-2 border-teal-600 bg-teal-50/50' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  Create Account
+                </button>
+                <button
+                  onClick={() => setMfrAuthMode('login')}
+                  className={`flex-1 py-3.5 text-sm font-semibold transition ${mfrAuthMode === 'login' ? 'text-teal-700 border-b-2 border-teal-600 bg-teal-50/50' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  Sign In
+                </button>
+              </div>
+            )}
+
+            {/* Sign-up form */}
+            {mfrAuthMode === 'signup' && (
+              <form onSubmit={handleCorpSignup} className="p-6 md:p-8 space-y-4">
+                <div className="relative">
+                  <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Contact Person Name (e.g., Aline Uwase)"
+                    value={corpAccount.contactName}
+                    onChange={(e) => setCorpAccount({ ...corpAccount, contactName: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="email"
+                    placeholder="Corporate Email (e.g., sales@nyabihutea.rw)"
+                    value={corpAccount.email}
+                    onChange={(e) => setCorpAccount({ ...corpAccount, email: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="password"
+                    placeholder="Account Password"
+                    value={corpAccount.password}
+                    onChange={(e) => setCorpAccount({ ...corpAccount, password: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="password"
+                    placeholder="Confirm Account Password"
+                    value={corpAccount.confirmPassword}
+                    onChange={(e) => setCorpAccount({ ...corpAccount, confirmPassword: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+
+                <button type="submit" className="w-full py-3.5 gradient-primary text-white font-bold rounded-xl hover:opacity-95 transition flex items-center justify-center gap-2 shadow-sm">
+                  Create Account & Continue <ArrowRight size={16} />
+                </button>
+
+                <div className="flex items-center gap-2 justify-center text-[11px] text-gray-400 pt-1">
+                  <Shield size={12} className="text-teal-500" />
+                  <span>Your catalog, escrow payouts, and production stories will link to this account.</span>
+                </div>
+              </form>
+            )}
+
+            {/* Sign-in form */}
+            {mfrAuthMode === 'login' && (
+              <form onSubmit={handleCorpLogin} className="p-6 md:p-8 space-y-4">
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="email"
+                    placeholder="Corporate Email"
+                    value={corpAccount.email}
+                    onChange={(e) => setCorpAccount({ ...corpAccount, email: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="password"
+                    placeholder="Account Password"
+                    value={corpAccount.password}
+                    onChange={(e) => setCorpAccount({ ...corpAccount, password: e.target.value })}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+
+                <button type="submit" className="w-full py-3.5 gradient-primary text-white font-bold rounded-xl hover:opacity-95 transition flex items-center justify-center gap-2 shadow-sm">
+                  <UserIcon size={16} /> Sign In & Resume Onboarding
+                </button>
+
+                <p className="text-center text-xs text-gray-500">
+                  First time on TradeBook?{' '}
+                  <button type="button" onClick={() => setMfrAuthMode('signup')} className="text-teal-600 font-semibold hover:underline">
+                    Create a corporate account
+                  </button>
+                </p>
+              </form>
+            )}
+
+            {/* Upcoming steps preview */}
+            <div className="px-6 md:px-8 pb-8">
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Unlocks after your account is created</p>
+                <div className="space-y-2.5">
+                  {[
+                    { icon: <Building2 size={13} />, label: 'WhatsApp business number, RDB registration & factory profile' },
+                    { icon: <Package size={13} />, label: 'Publish your first wholesale catalog product' },
+                    { icon: <Video size={13} />, label: 'Post a production video story for retail buyers' },
+                  ].map((s, i) => (
+                    <div key={i} className="flex items-center gap-2.5 text-xs text-gray-500">
+                      <div className="w-6 h-6 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-400 shrink-0">
+                        {s.icon}
+                      </div>
+                      {s.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Phase B: authenticated manufacturer — corporate catalog wizard.
   return (
     <div className="min-h-screen bg-gray-50 py-10">
       <div className="container-app max-w-3xl">
@@ -256,9 +483,27 @@ export default function ManufacturerOnboardingPage() {
           </p>
         </div>
 
+        {/* Authenticated corporate account banner */}
+        <div className="bg-teal-50 border border-teal-100 rounded-xl px-4 py-3 mb-6 flex items-center justify-between gap-3 animate-fade-in">
+          <div className="flex items-center gap-2.5 text-xs text-teal-800 min-w-0">
+            <CheckCircle size={16} className="text-teal-600 shrink-0" />
+            <span className="truncate">
+              Signed in as <strong>{user?.name}</strong> ({user?.email}) — your catalog will publish under this account.
+            </span>
+          </div>
+          <button
+            onClick={logout}
+            className="shrink-0 text-[11px] font-bold text-gray-400 hover:text-red-500 transition flex items-center gap-1"
+            title="Sign out of this corporate account"
+          >
+            <LogOut size={12} /> Switch account
+          </button>
+        </div>
+
         {/* Wizard Progress Steps */}
         <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm mb-6 flex justify-between items-center overflow-x-auto gap-4">
           {[
+            { num: 0, label: 'Account', icon: <Shield size={16} /> },
             { num: 1, label: 'Profile details', icon: <Building2 size={16} /> },
             { num: 2, label: 'First product', icon: <Package size={16} /> },
             { num: 3, label: 'Production story', icon: <Video size={16} /> },

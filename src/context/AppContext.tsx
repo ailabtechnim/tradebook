@@ -2,16 +2,29 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { User, CartItem, Notification, Manufacturer, Product, Order, Story } from '@/data/types';
-import { demoUser, manufacturers as initialManufacturers, products as initialProducts, orders as initialOrders, stories as initialStories } from '@/data/mockData';
+import { manufacturers as initialManufacturers, products as initialProducts, orders as initialOrders, stories as initialStories } from '@/data/mockData';
+
+// A locally persisted account record (sandbox credential store).
+interface StoredAccount {
+  email: string;
+  password: string;
+  user: User;
+}
+
+export interface RegistrationInput extends Partial<User> {
+  password?: string;
+}
 
 interface AppContextType {
   // User
   user: User | null;
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
   isLoggedIn: boolean;
-  login: (email: string, password: string) => void;
+  authHydrated: boolean;
+  login: (email: string, password: string) => boolean;
   logout: () => void;
-  register: (userData: Partial<User>) => void;
+  register: (userData: RegistrationInput) => void;
+  updateUser: (patch: Partial<User>) => void;
 
   // Cart
   cart: CartItem[];
@@ -61,8 +74,29 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const ACCOUNTS_KEY = 'tradebook-accounts';
+const SESSION_KEY = 'tradebook-user';
+
+// Pure localStorage helpers (no component state dependencies), kept at module scope.
+function readAccounts(): StoredAccount[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(ACCOUNTS_KEY);
+    return raw ? (JSON.parse(raw) as StoredAccount[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAccounts(accounts: StoredAccount[]) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  }
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [authHydrated, setAuthHydrated] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
@@ -77,12 +111,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Load all data from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedUser = localStorage.getItem('tradebook-user');
+      // Restore an existing session only — visitors intentionally start out
+      // anonymous so that checkout / onboarding authentication walls can trigger.
+      const savedUser = localStorage.getItem(SESSION_KEY);
       if (savedUser) {
-        setUser(JSON.parse(savedUser));
-      } else {
-        setUser(demoUser);
-        localStorage.setItem('tradebook-user', JSON.stringify(demoUser));
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch {
+          localStorage.removeItem(SESSION_KEY);
+        }
       }
 
       const savedCart = localStorage.getItem('tradebook-cart');
@@ -119,6 +156,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setStories(initialStories);
         localStorage.setItem('tradebook-stories', JSON.stringify(initialStories));
       }
+
+      // Signal that the persisted session/catalog state has been hydrated.
+      setAuthHydrated(true);
     }
   }, []);
 
@@ -128,33 +168,97 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Auth
-  const login = useCallback((email: string, password: string) => {
-    setUser(demoUser);
+  // Real credential lookup against the locally persisted account registry.
+  // Returns true on success, false on failure (callers can react accordingly).
+  const login = useCallback((email: string, password: string): boolean => {
+    const accounts = readAccounts();
+    const account = accounts.find(a => a.email.toLowerCase() === email.trim().toLowerCase());
+
+    if (!account) {
+      showToast('No account found for this email. Please sign up first.', 'error');
+      return false;
+    }
+    if (account.password !== password) {
+      showToast('Incorrect password. Please try again.', 'error');
+      return false;
+    }
+
+    setUser(account.user);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('tradebook-user', JSON.stringify(demoUser));
+      localStorage.setItem(SESSION_KEY, JSON.stringify(account.user));
     }
     setShowAuthModal(false);
-    showToast('Welcome back, Jean-Pierre!', 'success');
+    const firstName = account.user.name.split(' ')[0] || 'there';
+    showToast(`Welcome back, ${firstName}!`, 'success');
+    return true;
   }, [showToast]);
 
   const logout = useCallback(() => {
     setUser(null);
     setCart([]);
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('tradebook-user');
+      localStorage.removeItem(SESSION_KEY);
     }
     showToast('Logged out successfully', 'info');
   }, [showToast]);
 
-  const register = useCallback((userData: Partial<User>) => {
-    const newUser = { ...demoUser, ...userData } as User;
+  // Dynamic registration: builds a fresh user profile from the caller's
+  // inputs (name, email, phone, role/type, location) and stores the
+  // credentials so the same identity is restored on future logins.
+  const register = useCallback((userData: RegistrationInput) => {
+    const timestamp = new Date().toISOString().split('T')[0];
+    const accountType = userData.type || 'retailer';
+
+    const newUser: User = {
+      id: userData.id || `user-${Math.random().toString(36).substring(3, 9)}`,
+      name: userData.name?.trim() || 'TradeBook User',
+      email: userData.email?.trim() || '',
+      phone: userData.phone || '',
+      type: accountType,
+      avatar: userData.avatar || (accountType === 'manufacturer' ? '🏭' : '👤'),
+      location: userData.location || 'Kigali, Rwanda',
+      followedManufacturers: userData.followedManufacturers || [],
+      orders: [],
+      cart: [],
+      joinedDate: timestamp,
+      verified: true,
+    };
+
+    const accounts = readAccounts();
+    const existingIdx = accounts.findIndex(a => a.email.toLowerCase() === newUser.email.toLowerCase());
+    if (existingIdx >= 0) {
+      // Re-registering the same email keeps the original stable user id.
+      newUser.id = accounts[existingIdx].user.id;
+      accounts[existingIdx] = { email: newUser.email, password: userData.password || '', user: newUser };
+    } else {
+      accounts.push({ email: newUser.email, password: userData.password || '', user: newUser });
+    }
+    writeAccounts(accounts);
+
     setUser(newUser);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('tradebook-user', JSON.stringify(newUser));
+      localStorage.setItem(SESSION_KEY, JSON.stringify(newUser));
     }
     setShowAuthModal(false);
     showToast('Account created! Welcome to TradeBook!', 'success');
   }, [showToast]);
+
+  // Merge profile changes into the active session and keep the account
+  // registry in sync so the enriched profile survives future logins.
+  const updateUser = useCallback((patch: Partial<User>) => {
+    if (!user) return;
+    const updated: User = { ...user, ...patch, id: user.id };
+    setUser(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+      const accounts = readAccounts();
+      const idx = accounts.findIndex(a => a.email.toLowerCase() === updated.email.toLowerCase());
+      if (idx >= 0) {
+        accounts[idx] = { ...accounts[idx], user: updated };
+        writeAccounts(accounts);
+      }
+    }
+  }, [user]);
 
   // Cart
   const addToCart = useCallback((item: CartItem) => {
@@ -314,7 +418,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           : [...prev.followedManufacturers, manufacturerId],
       };
       if (typeof window !== 'undefined') {
-        localStorage.setItem('tradebook-user', JSON.stringify(updated));
+        localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
       }
       return updated;
     });
@@ -342,7 +446,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      user, setUser, isLoggedIn: !!user, login, logout, register,
+      user, setUser, isLoggedIn: !!user, authHydrated, login, logout, register, updateUser,
       cart, addToCart, removeFromCart, updateCartQuantity, clearCart, cartTotal, cartCount,
       orders, placeOrder, confirmDelivery, disputeOrder,
       toggleFollow, isFollowing,
