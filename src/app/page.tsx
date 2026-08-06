@@ -45,7 +45,7 @@ export default function HomePage() {
               <Link href="/products" className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-teal-700 font-bold rounded-xl hover:bg-gray-100 transition text-lg">
                 Browse Wholesale <ArrowRight size={20} />
               </Link>
-              <Link href="/manufacturers" className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-teal-800 text-white font-bold rounded-xl hover:bg-teal-900 transition border border-teal-600 text-lg">
+              <Link href="/manufacturers/onboarding" className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-teal-800 text-white font-bold rounded-xl hover:bg-teal-900 transition border border-teal-600 text-lg">
                 I&apos;m a Manufacturer
               </Link>
             </div>

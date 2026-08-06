@@ -12,7 +12,7 @@ import {
 
 export default function ManufacturerDetailPage() {
   const params = useParams();
-  const { manufacturers, products, isFollowing, toggleFollow, addToCart } = useApp();
+  const { manufacturers, products, stories, isFollowing, toggleFollow, addToCart } = useApp();
   const [activeTab, setActiveTab] = useState<'products' | 'about' | 'reviews' | 'stories'>('products');
 
   // Interactive WhatsApp chat state
@@ -25,6 +25,7 @@ export default function ManufacturerDetailPage() {
 
   const mfr = manufacturers.find(m => m.id === params.id);
   const mfrProducts = products.filter(p => p.manufacturerId === params.id);
+  const mfrStories = stories.filter(s => s.manufacturerId === params.id);
 
   // Scroll to bottom of WhatsApp chat whenever messages update
   useEffect(() => {
@@ -259,12 +260,59 @@ export default function ManufacturerDetailPage() {
         )}
 
         {activeTab === 'stories' && (
-          <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
-            <div className="text-center py-8">
-              <Eye size={48} className="mx-auto text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No stories yet</h3>
-              <p className="text-gray-500 text-sm">This manufacturer hasn&apos;t published any stories yet</p>
-            </div>
+          <div className="space-y-6 animate-fade-in">
+            {mfrStories.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-100 p-6 text-center py-12 shadow-sm">
+                <Eye size={48} className="mx-auto text-gray-300 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No stories yet</h3>
+                <p className="text-gray-500 text-sm">This manufacturer hasn&apos;t published any stories yet.</p>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                {mfrStories.map(story => (
+                  <div key={story.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all">
+                    {/* HTML5 Video Player or Image */}
+                    {story.mediaType === 'video' ? (
+                      <div className="relative aspect-video bg-black">
+                        <video
+                          src={story.mediaUrl}
+                          controls
+                          poster="https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=600"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute top-3 left-3 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping"></span>
+                          <span>Factory Story</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative aspect-video bg-gray-100">
+                        <img src={story.thumbnail} alt={story.title} className="w-full h-full object-cover" />
+                      </div>
+                    )}
+
+                    <div className="p-5">
+                      <h3 className="font-bold text-gray-900 text-base mb-2 leading-tight">{story.title}</h3>
+                      <p className="text-xs text-gray-500 leading-relaxed mb-4">{story.description}</p>
+                      
+                      <div className="flex flex-wrap gap-1 mb-4">
+                        {story.tags.map(tag => (
+                          <span key={tag} className="tag text-[10px]">#{tag}</span>
+                        ))}
+                      </div>
+
+                      <div className="flex justify-between items-center text-[11px] text-gray-400 border-t pt-3 border-gray-50">
+                        <span>Published on {new Date(story.createdAt).toLocaleDateString()}</span>
+                        <div className="flex gap-3">
+                          <span>👁️ {story.views.toLocaleString()} views</span>
+                          <span>❤️ {story.likes} likes</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

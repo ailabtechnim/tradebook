@@ -1,12 +1,13 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
-import { User, CartItem, Notification, Manufacturer, Product, Order } from '@/data/types';
-import { demoUser, manufacturers as initialManufacturers, products as initialProducts, orders as initialOrders } from '@/data/mockData';
+import { User, CartItem, Notification, Manufacturer, Product, Order, Story } from '@/data/types';
+import { demoUser, manufacturers as initialManufacturers, products as initialProducts, orders as initialOrders, stories as initialStories } from '@/data/mockData';
 
 interface AppContextType {
   // User
   user: User | null;
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
   isLoggedIn: boolean;
   login: (email: string, password: string) => void;
   logout: () => void;
@@ -40,6 +41,10 @@ interface AppContextType {
   // Data
   manufacturers: Manufacturer[];
   products: Product[];
+  stories: Story[];
+  addManufacturer: (mfr: Manufacturer) => void;
+  addProduct: (prod: Product) => void;
+  addStory: (story: Story) => void;
 
   // UI
   showAuthModal: boolean;
@@ -57,18 +62,29 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(demoUser);
+  const [user, setUser] = useState<User | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [stories, setStories] = useState<Story[]>([]);
   const [notifs, setNotifs] = useState<Notification[]>([]);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalType, setAuthModalType] = useState<'login' | 'register'>('login');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Load cart and orders from localStorage
+  // Load all data from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const savedUser = localStorage.getItem('tradebook-user');
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      } else {
+        setUser(demoUser);
+        localStorage.setItem('tradebook-user', JSON.stringify(demoUser));
+      }
+
       const savedCart = localStorage.getItem('tradebook-cart');
       if (savedCart) setCart(JSON.parse(savedCart));
 
@@ -79,15 +95,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setOrders(initialOrders);
         localStorage.setItem('tradebook-orders', JSON.stringify(initialOrders));
       }
+
+      const savedMfrs = localStorage.getItem('tradebook-manufacturers');
+      if (savedMfrs) {
+        setManufacturers(JSON.parse(savedMfrs));
+      } else {
+        setManufacturers(initialManufacturers);
+        localStorage.setItem('tradebook-manufacturers', JSON.stringify(initialManufacturers));
+      }
+
+      const savedProducts = localStorage.getItem('tradebook-products');
+      if (savedProducts) {
+        setProducts(JSON.parse(savedProducts));
+      } else {
+        setProducts(initialProducts);
+        localStorage.setItem('tradebook-products', JSON.stringify(initialProducts));
+      }
+
+      const savedStories = localStorage.getItem('tradebook-stories');
+      if (savedStories) {
+        setStories(JSON.parse(savedStories));
+      } else {
+        setStories(initialStories);
+        localStorage.setItem('tradebook-stories', JSON.stringify(initialStories));
+      }
     }
   }, []);
-
-  // Save cart to localStorage when changed
-  useEffect(() => {
-    if (typeof window !== 'undefined' && cart.length > 0) {
-      localStorage.setItem('tradebook-cart', JSON.stringify(cart));
-    }
-  }, [cart]);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
     setToast({ message, type });
@@ -97,6 +130,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Auth
   const login = useCallback((email: string, password: string) => {
     setUser(demoUser);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tradebook-user', JSON.stringify(demoUser));
+    }
     setShowAuthModal(false);
     showToast('Welcome back, Jean-Pierre!', 'success');
   }, [showToast]);
@@ -104,11 +140,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setUser(null);
     setCart([]);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tradebook-user');
+    }
     showToast('Logged out successfully', 'info');
   }, [showToast]);
 
   const register = useCallback((userData: Partial<User>) => {
-    setUser({ ...demoUser, ...userData } as User);
+    const newUser = { ...demoUser, ...userData } as User;
+    setUser(newUser);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tradebook-user', JSON.stringify(newUser));
+    }
     setShowAuthModal(false);
     showToast('Account created! Welcome to TradeBook!', 'success');
   }, [showToast]);
@@ -224,6 +267,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     showToast('Order disputed. A TradeBook agent will contact you within 24 hours.', 'info');
   }, [showToast]);
 
+  // Data Modifiers
+  const addManufacturer = useCallback((mfr: Manufacturer) => {
+    setManufacturers(prev => {
+      const updated = [...prev, mfr];
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('tradebook-manufacturers', JSON.stringify(updated));
+      }
+      return updated;
+    });
+  }, []);
+
+  const addProduct = useCallback((prod: Product) => {
+    setProducts(prev => {
+      const updated = [...prev, prod];
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('tradebook-products', JSON.stringify(updated));
+      }
+      return updated;
+    });
+  }, []);
+
+  const addStory = useCallback((story: Story) => {
+    setStories(prev => {
+      const updated = [story, ...prev];
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('tradebook-stories', JSON.stringify(updated));
+      }
+      return updated;
+    });
+  }, []);
+
   // Follow
   const toggleFollow = useCallback((manufacturerId: string) => {
     if (!user) {
@@ -233,19 +307,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(prev => {
       if (!prev) return prev;
       const isFollowing = prev.followedManufacturers.includes(manufacturerId);
-      return {
+      const updated = {
         ...prev,
         followedManufacturers: isFollowing
           ? prev.followedManufacturers.filter(id => id !== manufacturerId)
           : [...prev.followedManufacturers, manufacturerId],
       };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('tradebook-user', JSON.stringify(updated));
+      }
+      return updated;
     });
-    const mfr = initialManufacturers.find(m => m.id === manufacturerId);
+    const mfr = manufacturers.find(m => m.id === manufacturerId);
     if (mfr) {
       const isNowFollowing = !user.followedManufacturers.includes(manufacturerId);
       showToast(isNowFollowing ? `Following ${mfr.name}` : `Unfollowed ${mfr.name}`, 'info');
     }
-  }, [user, showToast]);
+  }, [user, manufacturers, showToast]);
 
   const isFollowing = useCallback((manufacturerId: string) => {
     return user?.followedManufacturers.includes(manufacturerId) || false;
@@ -264,12 +342,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      user, isLoggedIn: !!user, login, logout, register,
+      user, setUser, isLoggedIn: !!user, login, logout, register,
       cart, addToCart, removeFromCart, updateCartQuantity, clearCart, cartTotal, cartCount,
       orders, placeOrder, confirmDelivery, disputeOrder,
       toggleFollow, isFollowing,
       notifications: notifs, unreadCount, markAsRead, markAllAsRead,
-      manufacturers: initialManufacturers, products: initialProducts,
+      manufacturers, products, stories, addManufacturer, addProduct, addStory,
       showAuthModal, setShowAuthModal, authModalType, setAuthModalType,
       toast, showToast, searchQuery, setSearchQuery,
     }}>
