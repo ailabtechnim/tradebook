@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
+import { isValidEmail } from '@/lib/security';
 import {
   Shield, CreditCard, Smartphone, Building, MapPin, Truck, Lock, CheckCircle,
   ArrowLeft, Loader2, AlertTriangle, Upload, Eye, FileText, Check, X, SmartphoneIcon,
@@ -10,7 +11,7 @@ import {
 } from 'lucide-react';
 
 export default function CheckoutPage() {
-  const { cart, cartTotal, cartCount, clearCart, showToast, placeOrder, user, isLoggedIn, authHydrated, login, register } = useApp();
+  const { cart, cartTotal, cartCount, clearCart, showToast, placeOrder, user, isLoggedIn, authHydrated, login, register, addNotification } = useApp();
   const [step, setStep] = useState(1);
 
   // Wholesaler authentication wall state
@@ -26,21 +27,21 @@ export default function CheckoutPage() {
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [generatedOrderId, setGeneratedOrderId] = useState('');
 
-  // Shipping information state
+  // Shipping information state — filled by the signed-in wholesaler
   const [shippingInfo, setShippingInfo] = useState({
-    fullName: 'Jean-Pierre Habimana',
-    phone: '+250 788 111 222',
-    address: 'Kimironko Market, KG 12 Ave',
+    fullName: '',
+    phone: '',
+    address: '',
     city: 'Kigali',
-    district: 'Gasabo',
+    district: '',
   });
 
   // Mobile money payment state
-  const [momoPhone, setMomoPhone] = useState('+250 788 111 222');
+  const [momoPhone, setMomoPhone] = useState('');
 
   // Credit card payment state
   const [cardInfo, setCardInfo] = useState({
-    holder: 'Jean-Pierre Habimana',
+    holder: '',
     number: '',
     expiry: '',
     cvv: '',
@@ -87,15 +88,15 @@ export default function CheckoutPage() {
   }, [user]);
 
   // Wholesaler portal: create a new wholesale buyer account (sign-up).
-  const handleWholesalerSignup = (e: React.FormEvent) => {
+  const handleWholesalerSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!buyerCreds.shopName.trim()) return showToast('Please enter your Retail Shop Name.', 'error');
-    if (!buyerCreds.email.trim() || !buyerCreds.email.includes('@')) return showToast('Please enter a valid Business Email.', 'error');
+    if (!isValidEmail(buyerCreds.email)) return showToast('Please enter a valid Business Email.', 'error');
     if (!buyerCreds.phone.trim()) return showToast('Please enter your Contact Phone number.', 'error');
     if (!buyerCreds.city.trim()) return showToast('Please enter your Location / City.', 'error');
-    if (buyerCreds.password.length < 4) return showToast('Password must be at least 4 characters.', 'error');
+    if (buyerCreds.password.length < 6) return showToast('Password must be at least 6 characters.', 'error');
 
-    register({
+    const ok = await register({
       name: buyerCreds.shopName,
       email: buyerCreds.email,
       phone: buyerCreds.phone,
@@ -104,15 +105,17 @@ export default function CheckoutPage() {
       avatar: '🏪',
       password: buyerCreds.password,
     });
-    showToast(`Welcome, ${buyerCreds.shopName}! Your wholesale checkout is now unlocked.`, 'success');
+    if (ok) {
+      showToast(`Welcome, ${buyerCreds.shopName}! Your wholesale checkout is now unlocked.`, 'success');
+    }
   };
 
   // Wholesaler portal: sign in with an existing wholesale buyer account.
-  const handleWholesalerLogin = (e: React.FormEvent) => {
+  const handleWholesalerLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!buyerCreds.email.trim()) return showToast('Please enter your account email.', 'error');
     if (!buyerCreds.password) return showToast('Please enter your password.', 'error');
-    login(buyerCreds.email, buyerCreds.password);
+    await login(buyerCreds.email, buyerCreds.password);
   };
 
   const formatPrice = (price: number) => new Intl.NumberFormat('en-RW').format(price);
@@ -277,8 +280,9 @@ export default function CheckoutPage() {
 
       const newOrder: any = {
         id: (generatedOrderId + '-' + mfrId.split('-')[1]).toLowerCase(),
-        buyerId: user?.id || 'demo-user',
-        buyerName: user?.name || 'Jean-Pierre Habimana',
+        // The wholesaler gate guarantees an authenticated retailer here.
+        buyerId: user?.id ?? '',
+        buyerName: user?.name ?? '',
         manufacturerId: mfrId,
         manufacturerName: mfrName,
         products: mfrItems.map(item => ({
@@ -304,9 +308,19 @@ export default function CheckoutPage() {
           conditions: ['Delivery confirmed by buyer', 'Product quality verified']
         }
       };
-
+      
       placeOrder(newOrder);
     });
+
+    // Real per-user notification confirming the escrow-protected order.
+    if (user) {
+      addNotification(user.id, {
+        type: 'order_update',
+        title: 'Order placed — funds held in escrow 🔒',
+        message: `Order ${generatedOrderId} (${formatPrice(total)} RWF) is confirmed. Funds release only after you confirm delivery.`,
+        link: '/dashboard',
+      });
+    }
 
     setOrderPlaced(true);
     setShowSimModal(false);
@@ -601,7 +615,7 @@ export default function CheckoutPage() {
                       type="text"
                       value={shippingInfo.fullName}
                       onChange={(e) => handleShippingChange('fullName', e.target.value)}
-                      placeholder="Jean-Pierre Habimana"
+                      placeholder="Your name or retail shop name"
                       className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                     />
                   </div>
@@ -746,7 +760,7 @@ export default function CheckoutPage() {
                             type="text"
                             value={cardInfo.holder}
                             onChange={(e) => setCardInfo({ ...cardInfo, holder: e.target.value })}
-                            placeholder="Jean-Pierre Habimana"
+                            placeholder="Name on card"
                             className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                           />
                         </div>

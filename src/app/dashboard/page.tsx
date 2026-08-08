@@ -3,19 +3,25 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
-import { notifications } from '@/data/mockData';
 import {
   ShoppingBag, Heart, Bell, Package, Truck, CheckCircle, Clock, Shield,
   DollarSign, TrendingUp, Users, MapPin, Star, Eye, ChevronRight, ArrowRight,
-  AlertTriangle, X, Check
+  AlertTriangle, X, Check, LogIn, Store, Building2, Plus, Loader2
 } from 'lucide-react';
 
 export default function DashboardPage() {
-  const { user, manufacturers, isFollowing, orders, confirmDelivery, disputeOrder } = useApp();
+  const { user, isLoggedIn, authHydrated, manufacturers, isFollowing, orders, confirmDelivery, disputeOrder, notifications, unreadCount, markAllAsRead, setShowAuthModal, setAuthModalType } = useApp();
   const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'following' | 'alerts'>('overview');
 
   const formatPrice = (price: number) => new Intl.NumberFormat('en-RW').format(price);
   const followedMfrs = manufacturers.filter(m => isFollowing(m.id));
+
+  // Role-aware order scoping: retailers see their purchases, manufacturers
+  // see incoming orders for THEIR company.
+  const isManufacturer = user?.type === 'manufacturer';
+  const myOrders = user
+    ? orders.filter(o => (isManufacturer ? o.manufacturerId === user.manufacturerId : o.buyerId === user.id))
+    : [];
 
   const statusColors: Record<string, string> = {
     pending: 'bg-yellow-100 text-yellow-700',
@@ -34,24 +40,73 @@ export default function DashboardPage() {
     refunded: 'bg-red-100 text-red-700',
   };
 
+  // Wait for session hydration to avoid flashing the wrong state.
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 size={32} className="text-teal-600 animate-spin" />
+      </div>
+    );
+  }
+
+  // Auth gate: the dashboard is personal — anonymous users must sign in.
+  if (!isLoggedIn || !user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center max-w-md mx-4 animate-fade-in">
+          <div className="w-16 h-16 gradient-primary rounded-2xl flex items-center justify-center text-white mx-auto mb-5">
+            <LogIn size={28} />
+          </div>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Sign in to view your dashboard</h1>
+          <p className="text-sm text-gray-500 mb-6">Your orders, followed manufacturers, notifications and escrow controls live here — they belong to your account.</p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button onClick={() => { setAuthModalType('login'); setShowAuthModal(true); }} className="px-6 py-3 gradient-primary text-white text-sm font-semibold rounded-xl hover:opacity-90 transition">
+              Sign In
+            </button>
+            <button onClick={() => { setAuthModalType('register'); setShowAuthModal(true); }} className="px-6 py-3 bg-white border border-teal-200 text-teal-700 text-sm font-semibold rounded-xl hover:bg-teal-50 transition">
+              Create Account
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-100">
         <div className="container-app py-6">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 gradient-primary rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-sm">
-              {user?.name.charAt(0) || 'U'}
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 gradient-primary rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-sm">
+                {user?.name.charAt(0) || 'U'}
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Welcome back, {user?.name?.split(' ')[0] || 'User'}!</h1>
+                <p className="text-sm text-gray-500 flex items-center gap-1">
+                  <MapPin size={12} className="text-gray-400" /> {user?.location || 'Rwanda'}
+                  <span className="ml-2 px-2 py-0.5 bg-teal-100 text-teal-700 text-[10px] font-semibold rounded-full">
+                    {user?.type === 'retailer' ? '🏪 Retailer' : '🏭 Manufacturer'}
+                  </span>
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Welcome back, {user?.name?.split(' ')[0] || 'User'}!</h1>
-              <p className="text-sm text-gray-500 flex items-center gap-1">
-                <MapPin size={12} className="text-gray-400" /> {user?.location || 'Rwanda'}
-                <span className="ml-2 px-2 py-0.5 bg-teal-100 text-teal-700 text-[10px] font-semibold rounded-full">
-                  {user?.type === 'retailer' ? '🏪 Retailer' : '🏭 Manufacturer'}
-                </span>
-              </p>
-            </div>
+
+            {/* Manufacturer quick links to their own catalog */}
+            {isManufacturer && (
+              <div className="flex gap-2">
+                {user.manufacturerId ? (
+                  <Link href={`/manufacturers/${user.manufacturerId}`} className="inline-flex items-center gap-2 px-4 py-2.5 gradient-primary text-white text-sm font-semibold rounded-xl hover:opacity-95 transition shadow-sm">
+                    <Building2 size={16} /> Manage My Catalog
+                  </Link>
+                ) : (
+                  <Link href="/manufacturers/onboarding" className="inline-flex items-center gap-2 px-4 py-2.5 gradient-primary text-white text-sm font-semibold rounded-xl hover:opacity-95 transition shadow-sm">
+                    <Plus size={16} /> Complete Factory Profile
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -60,15 +115,17 @@ export default function DashboardPage() {
         {/* Quick Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
-            { icon: <Package size={20} />, value: orders.length, label: 'Total Orders', color: 'bg-blue-50 text-blue-600' },
-            { icon: <Heart size={20} />, value: followedMfrs.length, label: 'Following', color: 'bg-pink-50 text-pink-600' },
+            { icon: <Package size={20} />, value: myOrders.length, label: isManufacturer ? 'Incoming Orders' : 'Total Orders', color: 'bg-blue-50 text-blue-600' },
+            ...(isManufacturer
+              ? [{ icon: <Store size={20} />, value: user?.manufacturerId ? 1 : 0, label: 'Live Catalog', color: 'bg-teal-50 text-teal-600' }]
+              : [{ icon: <Heart size={20} />, value: followedMfrs.length, label: 'Following', color: 'bg-pink-50 text-pink-600' }]),
             {
               icon: <Shield size={20} />,
-              value: `${formatPrice(orders.reduce((sum, o) => sum + (o.paymentStatus === 'escrow' && o.status !== 'completed' ? o.totalAmount : 0), 0))} RWF`,
-              label: 'Secured in Escrow',
+              value: `${formatPrice(myOrders.reduce((sum, o) => sum + (o.paymentStatus === 'escrow' && o.status !== 'completed' ? o.totalAmount : 0), 0))} RWF`,
+              label: isManufacturer ? 'Pending in Escrow' : 'Secured in Escrow',
               color: 'bg-amber-50 text-amber-600'
             },
-            { icon: <Bell size={20} />, value: notifications.filter(n => !n.read).length, label: 'Notifications', color: 'bg-purple-50 text-purple-600' },
+            { icon: <Bell size={20} />, value: unreadCount, label: 'Notifications', color: 'bg-purple-50 text-purple-600' },
           ].map(stat => (
             <div key={stat.label} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${stat.color}`}>{stat.icon}</div>
@@ -82,7 +139,7 @@ export default function DashboardPage() {
         <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
           {[
             { key: 'overview' as const, label: 'Overview' },
-            { key: 'orders' as const, label: `Orders (${orders.length})` },
+            { key: 'orders' as const, label: `${isManufacturer ? 'Incoming Orders' : 'Orders'} (${myOrders.length})` },
             { key: 'following' as const, label: `Following (${followedMfrs.length})` },
             { key: 'alerts' as const, label: 'Price Alerts' },
           ].map(tab => (
@@ -103,10 +160,12 @@ export default function DashboardPage() {
                 <button onClick={() => setActiveTab('orders')} className="text-xs font-semibold text-teal-600 hover:underline">View All</button>
               </div>
               <div className="space-y-3">
-                {orders.length === 0 ? (
-                  <div className="text-center py-6 text-sm text-gray-400">No recent orders found.</div>
+                {myOrders.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-gray-400">
+                    {isManufacturer ? 'No incoming orders yet — retailers will appear here once they order from you.' : 'No recent orders found.'}
+                  </div>
                 ) : (
-                  orders.slice(0, 3).map(order => (
+                  myOrders.slice(0, 3).map(order => (
                     <div key={order.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100/50">
                       <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center border border-teal-100">
                         <Package size={18} className="text-teal-600" />
@@ -131,10 +190,13 @@ export default function DashboardPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
               <div className="flex justify-between items-center mb-4 border-b border-gray-50 pb-3">
                 <h3 className="font-bold text-gray-900">Notifications</h3>
-                <span className="text-xs font-semibold text-teal-600 cursor-pointer">Mark all read</span>
+                <button onClick={markAllAsRead} className="text-xs font-semibold text-teal-600 hover:underline">Mark all read</button>
               </div>
               <div className="space-y-3">
-                {notifications.slice(0, 4).map(notif => (
+                {notifications.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-gray-400">No notifications yet — order updates and price alerts will appear here.</div>
+                ) : (
+                notifications.slice(0, 4).map(notif => (
                   <div key={notif.id} className={`flex items-start gap-3 p-3 rounded-xl border ${!notif.read ? 'bg-teal-50/40 border-teal-100' : 'bg-gray-50 border-gray-100'}`}>
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${notif.type === 'price_drop' ? 'bg-green-100 text-green-600' : notif.type === 'group_buy' ? 'bg-blue-100 text-blue-600' : notif.type === 'order_update' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-600'}`}>
                       {notif.type === 'price_drop' ? '💰' : notif.type === 'group_buy' ? '🤝' : notif.type === 'order_update' ? '📦' : '🔔'}
@@ -145,7 +207,8 @@ export default function DashboardPage() {
                     </div>
                     {!notif.read && <div className="w-1.5 h-1.5 bg-teal-600 rounded-full mt-2 shrink-0"></div>}
                   </div>
-                ))}
+                ))
+                )}
               </div>
             </div>
           </div>
@@ -154,17 +217,33 @@ export default function DashboardPage() {
         {/* Orders Tab */}
         {activeTab === 'orders' && (
           <div className="space-y-4 animate-fade-in">
-            {orders.length === 0 ? (
+            {myOrders.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-xl border border-gray-100 shadow-sm">
                 <Package size={48} className="mx-auto text-gray-300 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No orders placed yet</h3>
-                <p className="text-gray-500 text-sm mb-4">Your wholesale orders with secure escrow protection will appear here.</p>
-                <Link href="/products" className="inline-flex items-center gap-2 px-6 py-2.5 gradient-primary text-white font-medium rounded-xl hover:opacity-90 transition">
-                  Browse Wholesale Products <ArrowRight size={16} />
-                </Link>
+                <h3 className="text-lg font-medium text-gray-900 mb-1">{isManufacturer ? 'No incoming orders yet' : 'No orders placed yet'}</h3>
+                <p className="text-gray-500 text-sm mb-4">
+                  {isManufacturer
+                    ? 'When retailers order from your catalog, the orders will appear here for fulfillment.'
+                    : 'Your wholesale orders with secure escrow protection will appear here.'}
+                </p>
+                {isManufacturer ? (
+                  user.manufacturerId ? (
+                    <Link href={`/manufacturers/${user.manufacturerId}`} className="inline-flex items-center gap-2 px-6 py-2.5 gradient-primary text-white font-medium rounded-xl hover:opacity-90 transition">
+                      Open My Catalog <ArrowRight size={16} />
+                    </Link>
+                  ) : (
+                    <Link href="/manufacturers/onboarding" className="inline-flex items-center gap-2 px-6 py-2.5 gradient-primary text-white font-medium rounded-xl hover:opacity-90 transition">
+                      Complete Factory Profile <ArrowRight size={16} />
+                    </Link>
+                  )
+                ) : (
+                  <Link href="/products" className="inline-flex items-center gap-2 px-6 py-2.5 gradient-primary text-white font-medium rounded-xl hover:opacity-90 transition">
+                    Browse Wholesale Products <ArrowRight size={16} />
+                  </Link>
+                )}
               </div>
             ) : (
-              orders.map(order => (
+              myOrders.map(order => (
                 <div key={order.id} className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md transition-all duration-300">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 border-b border-gray-150 pb-4">
                     <div>
@@ -204,8 +283,23 @@ export default function DashboardPage() {
                     <span><strong>Delivery:</strong> {order.shippingAddress}</span>
                   </div>
 
-                  {/* Interactive Escrow Controls */}
-                  {order.paymentStatus === 'escrow' && order.status !== 'completed' && order.status !== 'disputed' && (
+                  {/* Interactive Escrow Controls — only the BUYER can
+                      release or dispute; the seller just sees the lock. */}
+                  {isManufacturer && order.paymentStatus === 'escrow' && order.status !== 'completed' && order.status !== 'disputed' && (
+                    <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-4 space-y-2">
+                      <div className="flex items-start gap-2.5">
+                        <Shield size={18} className="text-blue-600 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-xs font-bold text-blue-900">🔒 Buyer payment secured in escrow</p>
+                          <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+                            Fulfill this order and share tracking updates with <strong>{order.buyerName}</strong>. Funds release automatically when the buyer confirms delivery.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!isManufacturer && order.paymentStatus === 'escrow' && order.status !== 'completed' && order.status !== 'disputed' && (
                     <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-4 space-y-4">
                       <div className="flex items-start gap-2.5">
                         <Shield size={18} className="text-amber-600 mt-0.5 shrink-0" />

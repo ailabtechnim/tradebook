@@ -9,18 +9,24 @@ export default function AuthModal() {
   const [formData, setFormData] = useState({
     name: '', email: '', phone: '', password: '', location: '', type: 'retailer' as 'retailer' | 'manufacturer',
   });
+  const [submitting, setSubmitting] = useState(false);
 
   if (!showAuthModal) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (authModalType === 'login') {
-      // login returns false for unknown emails or wrong passwords and keeps
-      // the modal open so the user can correct their credentials.
-      const ok = login(formData.email, formData.password);
-      if (!ok) return;
-    } else {
-      register({ name: formData.name, email: formData.email, phone: formData.phone, type: formData.type, location: formData.location, password: formData.password });
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      if (authModalType === 'login') {
+        // login shows its own error toasts and keeps the modal open on failure.
+        await login(formData.email, formData.password);
+      } else {
+        // register validates, rejects duplicate emails and shows its own toasts.
+        await register({ name: formData.name, email: formData.email, phone: formData.phone, type: formData.type, location: formData.location, password: formData.password });
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -101,14 +107,14 @@ export default function AuthModal() {
             </div>
           )}
 
-          <button type="submit" className="w-full py-3 gradient-primary text-white font-semibold rounded-xl hover:opacity-90 transition">
-            {authModalType === 'login' ? 'Sign In' : 'Create Account'}
+          <button type="submit" disabled={submitting} className={`w-full py-3 gradient-primary text-white font-semibold rounded-xl transition ${submitting ? 'opacity-60 cursor-not-allowed' : 'hover:opacity-90'}`}>
+            {submitting ? 'Please wait…' : authModalType === 'login' ? 'Sign In' : 'Create Account'}
           </button>
 
           {authModalType === 'login' && (
-            <div className="text-center">
-              <a href="#" className="text-sm text-teal-600 hover:underline">Forgot password?</a>
-            </div>
+            <p className="text-center text-xs text-gray-400">
+              Trouble signing in? Accounts are stored on this device — create a new account if you registered elsewhere.
+            </p>
           )}
 
           <div className="text-center text-sm text-gray-500">

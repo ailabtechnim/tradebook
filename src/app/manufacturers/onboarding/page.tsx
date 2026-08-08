@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { categories } from '@/data/mockData';
+import { isValidEmail, sanitizeUrl } from '@/lib/security';
 import {
   Building2, Package, Video, Shield, ArrowLeft, ArrowRight, CheckCircle,
   Upload, Sparkles, Phone, Mail, MapPin, Globe, Clock, Award, FileText, Check, AlertCircle,
@@ -53,13 +54,14 @@ export default function ManufacturerOnboardingPage() {
     moq: '10',
     unit: 'piece',
     stockQuantity: '1000',
+    imageUrl: '',
   });
 
   // Step 3: Production Video Story State
   const [storyInfo, setStoryInfo] = useState({
     title: '',
     description: '',
-    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-factory-worker-checking-metal-production-41133-large.mp4',
+    videoUrl: '',
     tags: 'manufacturing, quality, rwanda',
   });
 
@@ -71,11 +73,12 @@ export default function ManufacturerOnboardingPage() {
   // Validations
   const validateStep1 = () => {
     if (!mfrInfo.name.trim()) return 'Company Name is required.';
-    if (!mfrInfo.email.trim()) return 'Business Email is required.';
+    if (!isValidEmail(mfrInfo.email)) return 'A valid Business Email is required.';
     if (!mfrInfo.phone.trim()) return 'Contact Phone is required.';
     if (!mfrInfo.description.trim()) return 'A short About Us description is required.';
     if (!mfrInfo.location.trim()) return 'Physical Location is required.';
     if (!mfrInfo.businessRegistration.trim()) return 'Business Registration Number is required.';
+    if (mfrInfo.website.trim() && !sanitizeUrl(mfrInfo.website)) return 'Website must be a valid http(s) address.';
     return null;
   };
 
@@ -86,24 +89,27 @@ export default function ManufacturerOnboardingPage() {
     if (!productInfo.suggestedRetailPrice || parseFloat(productInfo.suggestedRetailPrice) <= 0) return 'Valid Suggested Retail Price is required.';
     if (parseFloat(productInfo.wholesalePrice) >= parseFloat(productInfo.suggestedRetailPrice)) return 'Wholesale price must be lower than suggested retail price.';
     if (!productInfo.moq || parseInt(productInfo.moq) <= 0) return 'Valid Minimum Order Quantity (MOQ) is required.';
+    if (productInfo.imageUrl.trim() && !sanitizeUrl(productInfo.imageUrl)) return 'Product Image must be a valid http(s) URL.';
     return null;
   };
 
   const validateStep3 = () => {
     if (!storyInfo.title.trim()) return 'Story/Video Title is required.';
     if (!storyInfo.description.trim()) return 'Story/Video Description is required.';
+    if (!storyInfo.videoUrl.trim()) return 'A link to your production video is required.';
+    if (!sanitizeUrl(storyInfo.videoUrl)) return 'Production Video must be a valid http(s) URL (e.g., your hosted .mp4 link).';
     return null;
   };
 
   // ── Phase A: Corporate account creation (sign-up first) ──
-  const handleCorpSignup = (e: React.FormEvent) => {
+  const handleCorpSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!corpAccount.contactName.trim()) return showToast('Contact Person Name is required.', 'error');
-    if (!corpAccount.email.trim() || !corpAccount.email.includes('@')) return showToast('A valid Corporate Email is required.', 'error');
-    if (corpAccount.password.length < 4) return showToast('Account Password must be at least 4 characters.', 'error');
+    if (!isValidEmail(corpAccount.email)) return showToast('A valid Corporate Email is required.', 'error');
+    if (corpAccount.password.length < 6) return showToast('Account Password must be at least 6 characters.', 'error');
     if (corpAccount.password !== corpAccount.confirmPassword) return showToast('Passwords do not match.', 'error');
 
-    register({
+    const ok = await register({
       name: corpAccount.contactName,
       email: corpAccount.email,
       type: 'manufacturer',
@@ -111,6 +117,7 @@ export default function ManufacturerOnboardingPage() {
       location: 'Kigali, Rwanda',
       password: corpAccount.password,
     });
+    if (!ok) return; // register already explained why (e.g. duplicate email)
 
     // Pre-fill the corporate email into the business profile step
     setMfrInfo(prev => ({ ...prev, email: prev.email || corpAccount.email }));
@@ -118,11 +125,11 @@ export default function ManufacturerOnboardingPage() {
   };
 
   // ── Phase A: Returning manufacturer sign-in ──
-  const handleCorpLogin = (e: React.FormEvent) => {
+  const handleCorpLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!corpAccount.email.trim()) return showToast('Please enter your corporate email.', 'error');
     if (!corpAccount.password) return showToast('Please enter your account password.', 'error');
-    const ok = login(corpAccount.email, corpAccount.password);
+    const ok = await login(corpAccount.email, corpAccount.password);
     if (ok) {
       setMfrInfo(prev => ({ ...prev, email: prev.email || corpAccount.email }));
     }
@@ -163,21 +170,23 @@ export default function ManufacturerOnboardingPage() {
 
     const storyId = `story-${Math.random().toString(36).substring(3, 9)}`;
 
-    // 1. Construct Manufacturer
+    // 1. Construct Manufacturer — every field comes from the REAL
+    //    registered user's input. New vendors start UNVERIFIED with zero
+    //    ratings; TradeBook accreditation is earned, never fabricated.
     const newMfr = {
       id: mfrId,
       name: mfrInfo.name,
       slug: mfrSlug,
       logo: mfrInfo.logo,
-      coverImage: 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800',
+      coverImage: '',
       description: mfrInfo.description,
       longDescription: mfrInfo.longDescription || mfrInfo.description,
       location: mfrInfo.location,
       city: mfrInfo.city,
       country: 'Rwanda',
-      verified: true, // Auto-verified for sandbox demo
+      verified: false, // pending TradeBook physical verification
       premium: false,
-      rating: 5.0,
+      rating: 0,
       reviewCount: 0,
       followerCount: 0,
       productCount: 1,
@@ -186,22 +195,23 @@ export default function ManufacturerOnboardingPage() {
       contactPhone: mfrInfo.phone,
       contactEmail: mfrInfo.email,
       whatsapp: mfrInfo.whatsapp || mfrInfo.phone,
-      website: mfrInfo.website || 'www.' + mfrSlug + '.rw',
+      website: sanitizeUrl(mfrInfo.website),
       socialLinks: {},
       businessRegistration: mfrInfo.businessRegistration,
       established: mfrInfo.established,
       employees: mfrInfo.employees,
-      certifications: ['Made in Rwanda', 'Verified Supplier'],
+      certifications: [],
       story: null,
       stats: {
         totalOrders: 0,
-        responseTime: '< 1 hour',
-        fulfillmentRate: 100,
+        responseTime: 'New vendor',
+        fulfillmentRate: 0,
         repeatBuyers: 0,
       }
     };
 
-    // 2. Construct Product
+    // 2. Construct Product — uses the manufacturer's OWN product photo
+    //    when supplied; pending TradeBook product verification.
     const newProduct = {
       id: prodId,
       manufacturerId: mfrId,
@@ -212,7 +222,7 @@ export default function ManufacturerOnboardingPage() {
       description: productInfo.description,
       category: productInfo.category,
       subcategory: productInfo.subcategory || 'General',
-      images: ['https://images.unsplash.com/photo-1622597467836-f3285f2131b8?w=400'],
+      images: sanitizeUrl(productInfo.imageUrl) ? [sanitizeUrl(productInfo.imageUrl)] : [],
       wholesalePrice: parseFloat(productInfo.wholesalePrice),
       suggestedRetailPrice: parseFloat(productInfo.suggestedRetailPrice),
       currency: 'RWF',
@@ -223,18 +233,18 @@ export default function ManufacturerOnboardingPage() {
       ],
       inStock: true,
       stockQuantity: parseInt(productInfo.stockQuantity),
-      rating: 5.0,
+      rating: 0,
       reviewCount: 0,
       orderCount: 0,
       tags: ['new', 'wholesale-direct'],
       specifications: { 'Origin': mfrInfo.city, 'Manufacturer': mfrInfo.name },
       shippingInfo: 'Direct factory shipping arranged on TradeBook platform.',
-      verified: true,
+      verified: false,
       priceGuaranteeDays: 30,
       lastUpdated: new Date().toISOString().split('T')[0],
     };
 
-    // 3. Construct Video Story
+    // 3. Construct Video Story — the manufacturer's OWN hosted video link
     const newStory = {
       id: storyId,
       manufacturerId: mfrId,
@@ -243,13 +253,13 @@ export default function ManufacturerOnboardingPage() {
       title: storyInfo.title,
       description: storyInfo.description,
       mediaType: 'video' as const,
-      mediaUrl: storyInfo.videoUrl,
-      thumbnail: 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=600',
+      mediaUrl: sanitizeUrl(storyInfo.videoUrl),
+      thumbnail: '',
       views: 0,
       likes: 0,
       comments: 0,
       createdAt: new Date().toISOString().split('T')[0],
-      tags: storyInfo.tags.split(',').map(t => t.trim()),
+      tags: storyInfo.tags.split(',').map(t => t.trim()).filter(Boolean),
     };
 
     // 4. Update Global Context State & Local Storage
@@ -258,16 +268,14 @@ export default function ManufacturerOnboardingPage() {
     addStory(newStory);
 
     // 5. Bind the published catalog to the authenticated corporate account.
-    //    The manufacturer profile, product and story are attached to the
-    //    user ID created in the Account Registration phase (Phase A).
+    //    The manufacturer entity ID is stored on the user record so the
+    //    dashboard can show incoming orders and catalog management tools.
     updateUser({
-      name: mfrInfo.name,
-      email: mfrInfo.email || user?.email,
-      phone: mfrInfo.phone,
+      phone: mfrInfo.phone || user?.phone,
       type: 'manufacturer',
       avatar: mfrInfo.logo,
       location: `${mfrInfo.city}, Rwanda`,
-      verified: true,
+      manufacturerId: mfrId,
     });
 
     showToast(`Welcome to TradeBook, ${mfrInfo.name}! Your profile is now live.`, 'success');
@@ -653,6 +661,17 @@ export default function ManufacturerOnboardingPage() {
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                   />
                 </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Company Website (Optional)</label>
+                  <input
+                    type="url"
+                    value={mfrInfo.website}
+                    onChange={(e) => setMfrInfo({ ...mfrInfo, website: e.target.value })}
+                    placeholder="https://your-company.rw"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end pt-4 border-t border-gray-100">
@@ -774,12 +793,15 @@ export default function ManufacturerOnboardingPage() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Product Media (Image Mockup)</label>
-                  <div className="border-2 border-dashed border-gray-300 bg-gray-50 rounded-xl p-6 text-center select-none flex flex-col items-center justify-center">
-                    <Package className="text-teal-600/40 mb-2" size={32} />
-                    <span className="text-xs font-bold text-gray-700">Autoloaded Stock Product Asset</span>
-                    <span className="text-[10px] text-gray-400 mt-0.5">A placeholder Made-In-Rwanda wholesale product cover image will be generated for your catalogue.</span>
-                  </div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Product Photo URL (Optional)</label>
+                  <input
+                    type="url"
+                    value={productInfo.imageUrl}
+                    onChange={(e) => setProductInfo({ ...productInfo, imageUrl: e.target.value })}
+                    placeholder="https://your-domain.rw/product-photo.jpg"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Link to a photo of YOUR actual product (hosted on your website or cloud drive). Only http(s) links are accepted. If left empty, a neutral placeholder icon is shown.</p>
                 </div>
               </div>
 
@@ -847,16 +869,17 @@ export default function ManufacturerOnboardingPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Production Video Link</label>
-                  <div className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-2 text-xs text-gray-600">
-                    <div className="flex justify-between items-center bg-white p-2 border rounded-lg">
-                      <span className="font-mono font-semibold truncate max-w-[200px]">{storyInfo.videoUrl}</span>
-                      <span className="text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded text-[10px]">DEMO VIDEO LOADED</span>
-                    </div>
-                    <p className="text-[10px] text-gray-400">
-                      ℹ️ For this demo sandbox, we pre-loaded a beautiful sample factory assembly loop video to show on your live profile.
-                    </p>
-                  </div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Production Video URL</label>
+                  <input
+                    type="url"
+                    value={storyInfo.videoUrl}
+                    onChange={(e) => setStoryInfo({ ...storyInfo, videoUrl: e.target.value })}
+                    placeholder="https://your-domain.rw/factory-tour.mp4"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    ℹ️ Link to YOUR OWN production video (hosted .mp4/.webm URL). This is shown to retailers on your profile and proves your factory is real. Only http(s) links are accepted.
+                  </p>
                 </div>
               </div>
 
@@ -944,9 +967,9 @@ export default function ManufacturerOnboardingPage() {
                 <div className="flex gap-2.5">
                   <Shield size={18} className="text-teal-600 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs font-bold text-teal-900">TradeBook Verified Badging</p>
+                    <p className="text-xs font-bold text-teal-900">TradeBook Verification Process</p>
                     <p className="text-[11px] text-teal-700 leading-normal mt-0.5">
-                      Your factory profile will automatically receive a <strong>Verified</strong> badge for being compliant with corporate and RDB business registries.
+                      Your profile goes live immediately as <strong>Pending Verification</strong>. A TradeBook agent will physically review your RDB registration and factory site — the <strong>Verified</strong> badge is awarded only after that review, protecting retailer trust.
                     </p>
                   </div>
                 </div>

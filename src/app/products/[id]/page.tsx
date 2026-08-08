@@ -1,27 +1,37 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useParams } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
-import { reviews as allReviews } from '@/data/mockData';
+import { sanitizePhone } from '@/lib/security';
 import { Star, ShoppingCart, Heart, CheckCircle, MapPin, Shield, Clock, Truck, Package, ArrowLeft, Minus, Plus, MessageCircle, Share2, Bell, Award, TrendingDown, Users } from 'lucide-react';
 
 export default function ProductDetailPage() {
   const params = useParams();
-  const { products, manufacturers, addToCart, toggleFollow, isFollowing } = useApp();
+  const router = useRouter();
+  const { products, manufacturers, addToCart, toggleFollow, isFollowing, user, isLoggedIn, showToast, addNotification, createGroupBuy, setShowAuthModal, setAuthModalType } = useApp();
   const [quantity, setQuantity] = useState(0);
   const [activeTab, setActiveTab] = useState<'details' | 'reviews' | 'pricing'>('details');
+  const [priceAlertSet, setPriceAlertSet] = useState(false);
 
   const product = products.find(p => p.id === params.id);
   const mfr = manufacturers.find(m => m.id === product?.manufacturerId);
-  const productReviews = allReviews.filter(r => r.productId === params.id);
+
+  // Reviews start empty — buyers leave them after real verified purchases.
+  const productReviews: Array<{ id: string; reviewerName: string; rating: number; comment: string; verified: boolean; createdAt: string }> = [];
+
+  // Default order quantity = the product's MOQ (real wholesale UX).
+  useEffect(() => {
+    if (product) setQuantity(product.moq);
+  }, [product?.id]);
 
   if (!product) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Product Not Found</h2>
+          <p className="text-gray-500 text-sm mb-4">This product may have been removed, or the link is incorrect.</p>
           <Link href="/products" className="text-teal-600 hover:underline">← Back to Products</Link>
         </div>
       </div>
@@ -31,6 +41,49 @@ export default function ProductDetailPage() {
   const savings = Math.round((1 - product.wholesalePrice / product.suggestedRetailPrice) * 100);
   const currentTier = product.tieredPricing.find(t => quantity >= t.minQty && (t.maxQty === null || quantity <= t.maxQty)) || product.tieredPricing[0];
   const formatPrice = (price: number) => new Intl.NumberFormat('en-RW').format(price);
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Product link copied to clipboard!', 'success');
+    } catch {
+      showToast(url, 'info');
+    }
+  };
+
+  const handleWhatsApp = () => {
+    const phone = sanitizePhone(mfr?.whatsapp || mfr?.contactPhone || '').replace('+', '');
+    if (!phone) {
+      showToast('This manufacturer has not published a WhatsApp number yet.', 'info');
+      return;
+    }
+    const text = encodeURIComponent(`Hello ${product.manufacturerName}! I found "${product.name}" on TradeBook and I am interested in a wholesale order.`);
+    window.open(`https://wa.me/${phone}?text=${text}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handlePriceAlert = () => {
+    if (!isLoggedIn || !user) {
+      setAuthModalType('login');
+      setShowAuthModal(true);
+      showToast('Sign in to set a price alert for this product.', 'info');
+      return;
+    }
+    if (priceAlertSet) return;
+    setPriceAlertSet(true);
+    addNotification(user.id, {
+      type: 'price_drop',
+      title: 'Price alert activated 🔔',
+      message: `We will notify you if the wholesale price of "${product.name}" changes.`,
+      link: `/products/${product.id}`,
+    });
+    showToast('Price alert set! Check your notifications.', 'success');
+  };
+
+  const handleStartGroupBuy = () => {
+    const id = createGroupBuy(product);
+    if (id) router.push('/group-buy');
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -51,10 +104,10 @@ export default function ProductDetailPage() {
               <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-6xl">📦</div>
               {savings > 0 && <div className="absolute top-4 left-4 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg">-{savings}% OFF</div>}
               <div className="absolute top-4 right-4 flex gap-2">
-                <button className="w-10 h-10 bg-white/90 backdrop-blur rounded-full flex items-center justify-center hover:bg-white transition shadow-sm">
-                  <Heart size={18} className="text-gray-600" />
+                <button onClick={() => mfr && toggleFollow(mfr.id)} title="Follow this manufacturer" className="w-10 h-10 bg-white/90 backdrop-blur rounded-full flex items-center justify-center hover:bg-white transition shadow-sm">
+                  <Heart size={18} className={mfr && isFollowing(mfr.id) ? 'text-red-500 fill-red-500' : 'text-gray-600'} />
                 </button>
-                <button className="w-10 h-10 bg-white/90 backdrop-blur rounded-full flex items-center justify-center hover:bg-white transition shadow-sm">
+                <button onClick={handleShare} title="Copy product link" className="w-10 h-10 bg-white/90 backdrop-blur rounded-full flex items-center justify-center hover:bg-white transition shadow-sm">
                   <Share2 size={18} className="text-gray-600" />
                 </button>
               </div>
@@ -79,16 +132,22 @@ export default function ProductDetailPage() {
 
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
 
-            {/* Rating */}
+            {/* Rating — hidden honestly until real reviews exist */}
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex items-center gap-1">
-                {[...Array(5)].map((_, i) => (
-                  <Star key={i} size={16} className={i < Math.floor(product.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-300'} />
-                ))}
-                <span className="text-sm font-medium ml-1">{product.rating}</span>
-              </div>
-              <span className="text-sm text-gray-400">({product.reviewCount} reviews)</span>
-              <span className="text-sm text-gray-400">{product.orderCount} orders</span>
+              {product.reviewCount > 0 ? (
+                <>
+                  <div className="flex items-center gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <Star key={i} size={16} className={i < Math.floor(product.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-300'} />
+                    ))}
+                    <span className="text-sm font-medium ml-1">{product.rating.toFixed(1)}</span>
+                  </div>
+                  <span className="text-sm text-gray-400">({product.reviewCount} reviews)</span>
+                  {product.orderCount > 0 && <span className="text-sm text-gray-400">{product.orderCount} orders</span>}
+                </>
+              ) : (
+                <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-2.5 py-1 rounded-full">New listing — no reviews yet</span>
+              )}
             </div>
 
             <p className="text-gray-600 mb-6">{product.description}</p>
@@ -162,13 +221,18 @@ export default function ProductDetailPage() {
               <button onClick={() => mfr && toggleFollow(mfr.id)} className={`flex-1 py-3 text-sm font-medium rounded-xl transition flex items-center justify-center gap-2 ${mfr && isFollowing(mfr.id) ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
                 {mfr && isFollowing(mfr.id) ? <><CheckCircle size={16} /> Following {mfr.name}</> : <><Heart size={16} /> Follow Manufacturer</>}
               </button>
-              <button className="px-4 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition flex items-center gap-2 text-sm">
-                <Bell size={16} /> Price Alert
+              <button onClick={handlePriceAlert} className={`px-4 py-3 rounded-xl transition flex items-center gap-2 text-sm font-medium ${priceAlertSet ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                <Bell size={16} /> {priceAlertSet ? 'Alert On ✓' : 'Price Alert'}
               </button>
-              <button className="px-4 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 transition flex items-center gap-2 text-sm">
+              <button onClick={handleWhatsApp} className="px-4 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 transition flex items-center gap-2 text-sm font-medium">
                 <MessageCircle size={16} /> WhatsApp
               </button>
             </div>
+
+            {/* Group Buy starter */}
+            <button onClick={handleStartGroupBuy} className="w-full mt-3 py-3 bg-white border-2 border-dashed border-teal-200 text-teal-700 text-sm font-semibold rounded-xl hover:bg-teal-50 transition flex items-center justify-center gap-2">
+              <Users size={16} /> Start a Group Buy — pool with other retailers & unlock ~15% off
+            </button>
           </div>
         </div>
 

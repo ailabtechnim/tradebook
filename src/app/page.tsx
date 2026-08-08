@@ -3,19 +3,23 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
-import { categories, stories, groupBuys } from '@/data/mockData';
+import { categories } from '@/data/mockData';
 import {
   ArrowRight, TrendingUp, Shield, Users, Zap, Star, ChevronRight, Package,
   Eye, Clock, Heart, ShoppingCart, MapPin, CheckCircle, BarChart3, Globe,
-  Truck, Lock, Award, Handshake, Target, Sparkles
+  Truck, Lock, Award, Handshake, Target, Sparkles, Play
 } from 'lucide-react';
 
 export default function HomePage() {
-  const { manufacturers, products, addToCart, isFollowing, toggleFollow } = useApp();
+  const { manufacturers, products, stories, groupBuys, addToCart, isFollowing, toggleFollow } = useApp();
   const [activeTab, setActiveTab] = useState<'trending' | 'new' | 'deals'>('trending');
 
   const featuredProducts = products.slice(0, 8);
   const featuredManufacturers = manufacturers.slice(0, 6);
+  const activeGroupBuys = groupBuys.filter(g => g.status === 'active');
+
+  // Live truth: counts are computed from real user-generated listings.
+  const countForCategory = (name: string) => products.filter(p => p.category === name).length;
 
   const formatPrice = (price: number) => new Intl.NumberFormat('en-RW').format(price);
 
@@ -50,13 +54,13 @@ export default function HomePage() {
               </Link>
             </div>
 
-            {/* Trust badges */}
+            {/* Trust badges — platform features, not inflated vanity metrics */}
             <div className="flex flex-wrap gap-6 mt-10">
               {[
                 { icon: <Shield size={18} />, text: 'Escrow Protection' },
                 { icon: <CheckCircle size={18} />, text: 'Verified Manufacturers' },
-                { icon: <Users size={18} />, text: '12,000+ Retailers' },
-                { icon: <Globe size={18} />, text: '6 Countries' },
+                { icon: <BarChart3 size={18} />, text: 'Transparent Wholesale Prices' },
+                { icon: <Handshake size={18} />, text: 'Direct Factory Contact' },
               ].map(badge => (
                 <div key={badge.text} className="flex items-center gap-2 text-teal-200 text-sm">
                   {badge.icon} {badge.text}
@@ -67,15 +71,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ============ STATS BAR ============ */}
+      {/* ============ STATS BAR (live, computed from real listings) ============ */}
       <section className="bg-white border-b border-gray-100">
         <div className="container-app py-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {[
-              { value: '500+', label: 'Verified Manufacturers', icon: <Factory size={20} /> },
-              { value: '12,000+', label: 'Active Retailers', icon: <Users size={20} /> },
-              { value: '45,000+', label: 'Products Listed', icon: <Package size={20} /> },
-              { value: '98%', label: 'Price Transparency', icon: <BarChart3 size={20} /> },
+              { value: manufacturers.length, label: 'Registered Manufacturers', icon: <Factory size={20} /> },
+              { value: products.length, label: 'Products Listed', icon: <Package size={20} /> },
+              { value: '100%', label: 'Escrow-Protected Checkout', icon: <Shield size={20} /> },
+              { value: '1.5%', label: 'Flat Escrow Fee', icon: <BarChart3 size={20} /> },
             ].map(stat => (
               <div key={stat.label} className="text-center">
                 <div className="text-2xl md:text-3xl font-bold text-gradient">{stat.value}</div>
@@ -129,7 +133,7 @@ export default function HomePage() {
               <Link key={cat.id} href={`/products?category=${cat.slug}`} className="bg-white border border-gray-100 rounded-xl p-5 hover:shadow-md hover:border-teal-200 transition-all group card-hover">
                 <div className="text-3xl mb-3">{cat.icon}</div>
                 <h3 className="font-semibold text-gray-900 text-sm group-hover:text-teal-700 transition">{cat.name}</h3>
-                <p className="text-xs text-gray-400 mt-1">{cat.productCount} products</p>
+                <p className="text-xs text-gray-400 mt-1">{countForCategory(cat.name)} products</p>
               </Link>
             ))}
           </div>
@@ -158,6 +162,21 @@ export default function HomePage() {
             </div>
           </div>
 
+          {featuredProducts.length === 0 ? (
+            <div className="text-center py-14 bg-white rounded-2xl border border-dashed border-teal-200">
+              <Package size={44} className="mx-auto text-teal-300 mb-4" />
+              <h3 className="text-lg font-bold text-gray-900 mb-2">The marketplace is brand new</h3>
+              <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                No wholesale products have been listed yet. If you are a manufacturer, be the very first to publish your catalog and get discovered by retailers across Rwanda.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Link href="/manufacturers/onboarding" className="inline-flex items-center justify-center gap-2 px-6 py-3 gradient-primary text-white font-semibold rounded-xl hover:opacity-90 transition">
+                  List Your First Product <ArrowRight size={16} />
+                </Link>
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {featuredProducts.map(product => {
               const savings = Math.round((1 - product.wholesalePrice / product.suggestedRetailPrice) * 100);
@@ -189,9 +208,15 @@ export default function HomePage() {
                       {product.name}
                     </Link>
                     <div className="flex items-center gap-1 mt-1.5">
-                      <Star size={12} className="text-amber-400 fill-amber-400" />
-                      <span className="text-xs text-gray-600">{product.rating}</span>
-                      <span className="text-xs text-gray-400">({product.reviewCount})</span>
+                      {product.reviewCount > 0 ? (
+                        <>
+                          <Star size={12} className="text-amber-400 fill-amber-400" />
+                          <span className="text-xs text-gray-600">{product.rating.toFixed(1)}</span>
+                          <span className="text-xs text-gray-400">({product.reviewCount})</span>
+                        </>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">New listing</span>
+                      )}
                       {product.verified && <CheckCircle size={12} className="text-teal-500 ml-1" />}
                     </div>
 
@@ -239,6 +264,8 @@ export default function HomePage() {
               View All Products <ArrowRight size={16} />
             </Link>
           </div>
+          </>
+          )}
         </div>
       </section>
 
@@ -255,8 +282,20 @@ export default function HomePage() {
             </Link>
           </div>
 
+          {activeGroupBuys.length === 0 ? (
+            <div className="text-center py-14 bg-white rounded-2xl border border-dashed border-teal-200">
+              <Users size={44} className="mx-auto text-teal-300 mb-4" />
+              <h3 className="text-lg font-bold text-gray-900 mb-2">No active group buys yet</h3>
+              <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                Group buys are started by real retailers on real products. Once a product is listed, open its page and start a group buy to pool orders with other shops.
+              </p>
+              <Link href="/products" className="inline-flex items-center justify-center gap-2 px-6 py-3 gradient-primary text-white font-semibold rounded-xl hover:opacity-90 transition">
+                Browse Products to Start One <ArrowRight size={16} />
+              </Link>
+            </div>
+          ) : (
           <div className="grid md:grid-cols-3 gap-6">
-            {groupBuys.map(gb => {
+            {activeGroupBuys.slice(0, 6).map(gb => {
               const progress = Math.round((gb.currentQuantity / gb.targetQuantity) * 100);
               return (
                 <div key={gb.id} className="bg-white rounded-xl border border-gray-100 p-6 hover:shadow-lg transition-shadow">
@@ -305,6 +344,7 @@ export default function HomePage() {
               );
             })}
           </div>
+          )}
         </div>
       </section>
 
@@ -321,6 +361,18 @@ export default function HomePage() {
             </Link>
           </div>
 
+          {stories.length === 0 ? (
+            <div className="text-center py-14 bg-white rounded-2xl border border-dashed border-teal-200">
+              <Play size={44} className="mx-auto text-teal-300 mb-4" />
+              <h3 className="text-lg font-bold text-gray-900 mb-2">No stories published yet</h3>
+              <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                Production videos from real factories appear here. Manufacturers: show retailers how your products are actually made — it builds buyer trust.
+              </p>
+              <Link href="/manufacturers/onboarding" className="inline-flex items-center justify-center gap-2 px-6 py-3 gradient-primary text-white font-semibold rounded-xl hover:opacity-90 transition">
+                Share Your Production Story <ArrowRight size={16} />
+              </Link>
+            </div>
+          ) : (
           <div className="flex gap-4 overflow-x-auto pb-4 snap-x scrollbar-hide">
             {stories.map(story => (
               <div key={story.id} className="min-w-[280px] sm:min-w-[320px] bg-white rounded-xl overflow-hidden border border-gray-100 snap-start card-hover">
@@ -348,6 +400,7 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+          )}
         </div>
       </section>
 
@@ -364,6 +417,18 @@ export default function HomePage() {
             </Link>
           </div>
 
+          {featuredManufacturers.length === 0 ? (
+            <div className="text-center py-14 bg-white rounded-2xl border border-dashed border-teal-200">
+              <Factory size={44} className="mx-auto text-teal-300 mb-4" />
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Be the first manufacturer on TradeBook</h3>
+              <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                The directory is empty because every company here must be a real, registered business. Create your corporate account, pass verification, and claim the top spot.
+              </p>
+              <Link href="/manufacturers/onboarding" className="inline-flex items-center justify-center gap-2 px-6 py-3 gradient-primary text-white font-semibold rounded-xl hover:opacity-90 transition">
+                Register Your Factory <ArrowRight size={16} />
+              </Link>
+            </div>
+          ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {featuredManufacturers.map(mfr => (
               <div key={mfr.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow">
@@ -392,16 +457,22 @@ export default function HomePage() {
                     {mfr.name}
                   </Link>
                   <div className="flex items-center gap-2 mt-1">
-                    <div className="flex items-center gap-1">
-                      <Star size={12} className="text-amber-400 fill-amber-400" />
-                      <span className="text-sm font-medium">{mfr.rating}</span>
-                    </div>
-                    <span className="text-xs text-gray-400">({mfr.reviewCount} reviews)</span>
+                    {mfr.reviewCount > 0 ? (
+                      <>
+                        <div className="flex items-center gap-1">
+                          <Star size={12} className="text-amber-400 fill-amber-400" />
+                          <span className="text-sm font-medium">{mfr.rating.toFixed(1)}</span>
+                        </div>
+                        <span className="text-xs text-gray-400">({mfr.reviewCount} reviews)</span>
+                      </>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">New vendor</span>
+                    )}
                     <span className="text-xs text-gray-400 flex items-center gap-1"><MapPin size={10} /> {mfr.city}</span>
                   </div>
                   <p className="text-sm text-gray-500 mt-2 line-clamp-2">{mfr.description}</p>
 
-                  {/* Stats */}
+                  {/* Stats — zeroed honestly for brand-new vendors */}
                   <div className="flex gap-4 mt-3 pt-3 border-t border-gray-100">
                     <div className="text-center">
                       <div className="text-sm font-bold text-gray-900">{mfr.productCount}</div>
@@ -412,7 +483,7 @@ export default function HomePage() {
                       <div className="text-[10px] text-gray-400">Followers</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-sm font-bold text-gray-900">{mfr.stats.fulfillmentRate}%</div>
+                      <div className="text-sm font-bold text-gray-900">{mfr.stats.totalOrders > 0 ? `${mfr.stats.fulfillmentRate}%` : '—'}</div>
                       <div className="text-[10px] text-gray-400">Fulfillment</div>
                     </div>
                     <div className="text-center">
@@ -435,6 +506,7 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+          )}
         </div>
       </section>
 
@@ -465,17 +537,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ============ TRUST PARTNERS ============ */}
+      {/* ============ BUILT FOR RWANDA ============ */}
       <section className="py-12 bg-white">
-        <div className="container-app text-center">
-          <p className="text-sm text-gray-400 mb-6">TRUSTED BY LEADING RWANDAN INSTITUTIONS</p>
-          <div className="flex flex-wrap justify-center items-center gap-8 text-gray-400">
-            {['RDB Rwanda', 'Made in Rwanda', 'BNR', 'RISA', 'EAC Trade'].map(partner => (
-              <div key={partner} className="px-6 py-3 bg-gray-50 rounded-lg text-sm font-medium text-gray-500">
-                {partner}
-              </div>
-            ))}
-          </div>
+        <div className="container-app text-center max-w-2xl mx-auto">
+          <p className="text-sm text-gray-400 mb-4 tracking-wider font-semibold">BUILT FOR RWANDAN & EAST AFRICAN TRADE</p>
+          <p className="text-sm text-gray-500 leading-relaxed">
+            TradeBook is designed around how wholesale actually works here — MTN MoMo and Airtel Money payments,
+            RDB-registered manufacturers, real factory addresses, and prices in Rwandan Francs.
+            Every company on the platform is a real business registered by its owner.
+          </p>
         </div>
       </section>
     </div>

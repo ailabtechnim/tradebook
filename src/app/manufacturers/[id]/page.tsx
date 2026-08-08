@@ -4,15 +4,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
+import { categories } from '@/data/mockData';
+import { sanitizeUrl, sanitizePhone } from '@/lib/security';
 import {
   MapPin, Star, CheckCircle, Heart, Award, Users, Package, Truck, Clock, Shield,
   Globe, Phone, Mail, MessageCircle, ExternalLink, Eye, ShoppingCart, Calendar,
-  Building2, ArrowLeft, Send, X, MoreVertical, Search, Check, FileText
+  Building2, ArrowLeft, Send, X, MoreVertical, Search, Check, FileText, Plus, Video, AlertCircle
 } from 'lucide-react';
 
 export default function ManufacturerDetailPage() {
   const params = useParams();
-  const { manufacturers, products, stories, isFollowing, toggleFollow, addToCart } = useApp();
+  const { manufacturers, products, stories, isFollowing, toggleFollow, addToCart, user, addProduct, addStory, updateManufacturer, updateUser, showToast } = useApp();
   const [activeTab, setActiveTab] = useState<'products' | 'about' | 'reviews' | 'stories'>('products');
 
   // Interactive WhatsApp chat state
@@ -23,9 +25,22 @@ export default function ManufacturerDetailPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Owner catalog-management state (only visible to the manufacturer account
+  // that owns this profile)
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [showAddStory, setShowAddStory] = useState(false);
+  const [newProduct, setNewProduct] = useState({
+    name: '', description: '', category: '', wholesalePrice: '', suggestedRetailPrice: '',
+    moq: '10', unit: 'piece', stockQuantity: '1000', imageUrl: '',
+  });
+  const [newStory, setNewStory] = useState({ title: '', description: '', videoUrl: '', tags: '' });
+
   const mfr = manufacturers.find(m => m.id === params.id);
   const mfrProducts = products.filter(p => p.manufacturerId === params.id);
   const mfrStories = stories.filter(s => s.manufacturerId === params.id);
+
+  const isOwner = !!user && user.type === 'manufacturer' && user.manufacturerId === mfr?.id;
+  const waDigits = sanitizePhone(mfr?.whatsapp || mfr?.contactPhone || '').replace('+', '');
 
   // Scroll to bottom of WhatsApp chat whenever messages update
   useEffect(() => {
@@ -46,6 +61,88 @@ export default function ManufacturerDetailPage() {
   }
 
   const formatPrice = (price: number) => new Intl.NumberFormat('en-RW').format(price);
+
+  // ── Owner: add a new wholesale product to this catalog ──
+  const handleAddProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProduct.name.trim()) return showToast('Product name is required.', 'error');
+    if (!newProduct.description.trim()) return showToast('Product description is required.', 'error');
+    const wp = parseFloat(newProduct.wholesalePrice);
+    const rp = parseFloat(newProduct.suggestedRetailPrice);
+    const moq = parseInt(newProduct.moq, 10);
+    if (!wp || wp <= 0) return showToast('Enter a valid wholesale price.', 'error');
+    if (!rp || rp <= 0) return showToast('Enter a valid suggested retail price.', 'error');
+    if (wp >= rp) return showToast('Wholesale price must be lower than suggested retail price.', 'error');
+    if (!moq || moq <= 0) return showToast('Enter a valid MOQ.', 'error');
+    if (newProduct.imageUrl.trim() && !sanitizeUrl(newProduct.imageUrl)) return showToast('Product image must be a valid http(s) URL.', 'error');
+
+    const prodId = `prod-${Math.random().toString(36).substring(3, 10)}`;
+    const today = new Date().toISOString().split('T')[0];
+    addProduct({
+      id: prodId,
+      manufacturerId: mfr.id,
+      manufacturerName: mfr.name,
+      manufacturerLogo: mfr.logo,
+      name: newProduct.name.trim(),
+      slug: newProduct.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      description: newProduct.description.trim(),
+      category: newProduct.category || mfr.categories[0] || 'Food & Beverages',
+      subcategory: 'General',
+      images: sanitizeUrl(newProduct.imageUrl) ? [sanitizeUrl(newProduct.imageUrl)] : [],
+      wholesalePrice: wp,
+      suggestedRetailPrice: rp,
+      currency: 'RWF',
+      moq,
+      unit: newProduct.unit,
+      tieredPricing: [{ minQty: moq, maxQty: null, price: wp, label: `Wholesale Standard (${moq}+)` }],
+      inStock: true,
+      stockQuantity: parseInt(newProduct.stockQuantity, 10) || 0,
+      rating: 0,
+      reviewCount: 0,
+      orderCount: 0,
+      tags: ['new', 'wholesale-direct'],
+      specifications: { 'Origin': mfr.city, 'Manufacturer': mfr.name },
+      shippingInfo: 'Direct factory shipping arranged on TradeBook platform.',
+      verified: false,
+      priceGuaranteeDays: 30,
+      lastUpdated: today,
+    });
+    updateManufacturer(mfr.id, {
+      productCount: mfr.productCount + 1,
+      categories: Array.from(new Set([...mfr.categories, newProduct.category || mfr.categories[0] || 'Food & Beverages'])),
+    });
+    setNewProduct({ name: '', description: '', category: '', wholesalePrice: '', suggestedRetailPrice: '', moq: '10', unit: 'piece', stockQuantity: '1000', imageUrl: '' });
+    setShowAddProduct(false);
+    showToast('Product added to your wholesale catalog! It is now live for retailers.', 'success');
+  };
+
+  // ── Owner: publish a new production story ──
+  const handleAddStory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStory.title.trim()) return showToast('Story title is required.', 'error');
+    if (!newStory.description.trim()) return showToast('Story description is required.', 'error');
+    if (!sanitizeUrl(newStory.videoUrl)) return showToast('Enter a valid http(s) URL for your production video.', 'error');
+
+    addStory({
+      id: `story-${Math.random().toString(36).substring(3, 10)}`,
+      manufacturerId: mfr.id,
+      manufacturerName: mfr.name,
+      manufacturerLogo: mfr.logo,
+      title: newStory.title.trim(),
+      description: newStory.description.trim(),
+      mediaType: 'video' as const,
+      mediaUrl: sanitizeUrl(newStory.videoUrl),
+      thumbnail: '',
+      views: 0,
+      likes: 0,
+      comments: 0,
+      createdAt: new Date().toISOString().split('T')[0],
+      tags: newStory.tags.split(',').map(t => t.trim()).filter(Boolean),
+    });
+    setNewStory({ title: '', description: '', videoUrl: '', tags: '' });
+    setShowAddStory(false);
+    showToast('Production story published! Retailers can now watch it on your profile.', 'success');
+  };
 
   const handleOpenWaWidget = () => {
     setShowWaWidget(true);
@@ -116,12 +213,17 @@ export default function ManufacturerDetailPage() {
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 mb-1">
                 <h1 className="text-2xl font-bold text-gray-900">{mfr.name}</h1>
-                {mfr.verified && <span className="badge-verified flex items-center gap-1"><CheckCircle size={12} /> Verified</span>}
+                {mfr.verified
+                  ? <span className="badge-verified flex items-center gap-1"><CheckCircle size={12} /> Verified</span>
+                  : <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded-full"><Clock size={10} /> Pending Verification</span>}
                 {mfr.premium && <span className="badge-premium flex items-center gap-1"><Award size={12} /> Premium</span>}
+                {isOwner && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold rounded-full">👤 Your Company</span>}
               </div>
               <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 mb-3">
                 <span className="flex items-center gap-1"><MapPin size={14} /> {mfr.location}, {mfr.city}</span>
-                <span className="flex items-center gap-1"><Star size={14} className="text-amber-400 fill-amber-400" /> {mfr.rating} ({mfr.reviewCount} reviews)</span>
+                {mfr.reviewCount > 0
+                  ? <span className="flex items-center gap-1"><Star size={14} className="text-amber-400 fill-amber-400" /> {mfr.rating.toFixed(1)} ({mfr.reviewCount} reviews)</span>
+                  : <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">New vendor — no reviews yet</span>}
                 <span className="flex items-center gap-1"><Calendar size={14} /> Est. {mfr.established}</span>
               </div>
               <p className="text-gray-600 text-sm leading-relaxed">{mfr.description}</p>
@@ -131,10 +233,10 @@ export default function ManufacturerDetailPage() {
                 {[
                   { icon: <Package size={16} />, value: mfr.productCount, label: 'Products' },
                   { icon: <Users size={16} />, value: mfr.followerCount.toLocaleString(), label: 'Followers' },
-                  { icon: <Truck size={16} />, value: `${mfr.stats.fulfillmentRate}%`, label: 'Fulfillment' },
+                  { icon: <Truck size={16} />, value: mfr.stats.totalOrders > 0 ? `${mfr.stats.fulfillmentRate}%` : '—', label: 'Fulfillment' },
                   { icon: <Clock size={16} />, value: mfr.stats.responseTime, label: 'Response' },
                   { icon: <ShoppingCart size={16} />, value: mfr.stats.totalOrders.toLocaleString(), label: 'Orders' },
-                  { icon: <Users size={16} />, value: `${mfr.stats.repeatBuyers}%`, label: 'Repeat Buyers' },
+                  { icon: <Users size={16} />, value: mfr.stats.totalOrders > 0 ? `${mfr.stats.repeatBuyers}%` : '—', label: 'Repeat Buyers' },
                 ].map(stat => (
                   <div key={stat.label} className="flex items-center gap-2">
                     <span className="text-teal-600">{stat.icon}</span>
@@ -149,18 +251,37 @@ export default function ManufacturerDetailPage() {
 
             {/* Actions */}
             <div className="flex flex-col gap-2 shrink-0 justify-start sm:w-48">
-              <button onClick={() => toggleFollow(mfr.id)}
-                className={`w-full py-2.5 text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2 ${isFollowing(mfr.id) ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'gradient-primary text-white shadow-sm'}`}>
-                {isFollowing(mfr.id) ? <><CheckCircle size={16} /> Following</> : <><Heart size={16} /> Follow Manufacturer</>}
-              </button>
-              
-              {/* Simulated/Real WhatsApp Multi-Trigger Button */}
-              <button
-                onClick={handleOpenWaWidget}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2 shadow-sm"
-              >
-                <MessageCircle size={16} /> Chat on WhatsApp
-              </button>
+              {isOwner ? (
+                <>
+                  <button
+                    onClick={() => setShowAddProduct(true)}
+                    className="w-full py-2.5 gradient-primary text-white text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2 shadow-sm hover:opacity-95"
+                  >
+                    <Plus size={16} /> Add Product
+                  </button>
+                  <button
+                    onClick={() => setShowAddStory(true)}
+                    className="w-full py-2.5 bg-white border border-teal-200 text-teal-700 text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2 hover:bg-teal-50"
+                  >
+                    <Video size={16} /> Add Story
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => toggleFollow(mfr.id)}
+                    className={`w-full py-2.5 text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2 ${isFollowing(mfr.id) ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'gradient-primary text-white shadow-sm'}`}>
+                    {isFollowing(mfr.id) ? <><CheckCircle size={16} /> Following</> : <><Heart size={16} /> Follow Manufacturer</>}
+                  </button>
+
+                  {/* Simulated/Real WhatsApp Multi-Trigger Button */}
+                  <button
+                    onClick={handleOpenWaWidget}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <MessageCircle size={16} /> Chat on WhatsApp
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -184,6 +305,18 @@ export default function ManufacturerDetailPage() {
 
         {/* Tab Content */}
         {activeTab === 'products' && (
+          mfrProducts.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-100 p-6 text-center py-12 shadow-sm">
+              <Package size={48} className="mx-auto text-gray-300 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No products listed yet</h3>
+              <p className="text-gray-500 text-sm mb-4">{isOwner ? 'Publish your first wholesale product so retailers can start ordering.' : 'This manufacturer has not listed products yet.'}</p>
+              {isOwner && (
+                <button onClick={() => setShowAddProduct(true)} className="inline-flex items-center gap-2 px-6 py-2.5 gradient-primary text-white text-sm font-semibold rounded-xl hover:opacity-95 transition">
+                  <Plus size={16} /> Add Your First Product
+                </button>
+              )}
+            </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 animate-fade-in">
             {mfrProducts.map(product => {
               const savings = Math.round((1 - product.wholesalePrice / product.suggestedRetailPrice) * 100);
@@ -210,6 +343,7 @@ export default function ManufacturerDetailPage() {
               );
             })}
           </div>
+          )
         )}
 
         {activeTab === 'about' && (
@@ -232,7 +366,7 @@ export default function ManufacturerDetailPage() {
                   <div className="flex items-center gap-3 text-sm"><Phone size={16} className="text-teal-600" /><span>{mfr.contactPhone}</span></div>
                   <div className="flex items-center gap-3 text-sm"><Mail size={16} className="text-teal-600" /><span>{mfr.contactEmail}</span></div>
                   <div className="flex items-center gap-3 text-sm"><MessageCircle size={16} className="text-emerald-600" /><span>{mfr.whatsapp}</span></div>
-                  <div className="flex items-center gap-3 text-sm"><Globe size={16} className="text-teal-600" /><a href="#" className="text-teal-600 hover:underline font-medium">{mfr.website}</a></div>
+                  <div className="flex items-center gap-3 text-sm"><Globe size={16} className="text-teal-600" />{mfr.website ? <a href={mfr.website} target="_blank" rel="noopener noreferrer" className="text-teal-600 hover:underline font-medium">{mfr.website.replace(/^https?:\/\//, '')}</a> : <span className="text-gray-400">No website published</span>}</div>
                   <div className="flex items-center gap-3 text-sm"><MapPin size={16} className="text-teal-600" /><span>{mfr.location}, {mfr.city}, {mfr.country}</span></div>
                 </div>
               </div>
@@ -265,7 +399,12 @@ export default function ManufacturerDetailPage() {
               <div className="bg-white rounded-xl border border-gray-100 p-6 text-center py-12 shadow-sm">
                 <Eye size={48} className="mx-auto text-gray-300 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No stories yet</h3>
-                <p className="text-gray-500 text-sm">This manufacturer hasn&apos;t published any stories yet.</p>
+                <p className="text-gray-500 text-sm mb-4">{isOwner ? 'Share a production video — stories build trust and attract retail buyers.' : 'This manufacturer hasn\'t published any stories yet.'}</p>
+                {isOwner && (
+                  <button onClick={() => setShowAddStory(true)} className="inline-flex items-center gap-2 px-6 py-2.5 gradient-primary text-white text-sm font-semibold rounded-xl hover:opacity-95 transition">
+                    <Video size={16} /> Publish Your First Story
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid md:grid-cols-2 gap-6">
@@ -277,7 +416,7 @@ export default function ManufacturerDetailPage() {
                         <video
                           src={story.mediaUrl}
                           controls
-                          poster="https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=600"
+                          preload="metadata"
                           className="w-full h-full object-cover"
                         />
                         <div className="absolute top-3 left-3 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">
@@ -287,7 +426,11 @@ export default function ManufacturerDetailPage() {
                       </div>
                     ) : (
                       <div className="relative aspect-video bg-gray-100">
-                        <img src={story.thumbnail} alt={story.title} className="w-full h-full object-cover" />
+                        {story.thumbnail ? (
+                          <img src={story.thumbnail} alt={story.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-5xl bg-gradient-to-br from-gray-100 to-gray-200">📸</div>
+                        )}
                       </div>
                     )}
 
@@ -401,7 +544,7 @@ export default function ManufacturerDetailPage() {
 
             {/* REAL WHATSAPP DIRECT-LINK TRIGGERS */}
             <a
-              href={`https://api.whatsapp.com/send?phone=${mfr.whatsapp.replace('+', '')}&text=${encodeURIComponent(waMessages[waMessages.length - 1]?.sender === 'user' ? waMessages[waMessages.length - 1].text : 'Hello! I am interested in wholesale partnerships.')}`}
+              href={`https://wa.me/${waDigits}?text=${encodeURIComponent(waMessages[waMessages.length - 1]?.sender === 'user' ? waMessages[waMessages.length - 1].text : 'Hello! I am interested in wholesale partnerships.')}`}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg text-center flex items-center justify-center gap-1 transition shadow-sm"
@@ -410,6 +553,123 @@ export default function ManufacturerDetailPage() {
             </a>
           </div>
 
+        </div>
+      )}
+
+      {/* ============ OWNER: ADD PRODUCT MODAL ============ */}
+      {showAddProduct && isOwner && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowAddProduct(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Package size={20} className="text-teal-600" /> Add Wholesale Product
+              </h2>
+              <button onClick={() => setShowAddProduct(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleAddProduct} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Product Name *</label>
+                <input type="text" value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} placeholder="e.g. Refined Sunflower Oil (5L)" maxLength={120}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Description *</label>
+                <textarea rows={2} value={newProduct.description} onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })} placeholder="Quality, packaging, shelf life..." maxLength={500}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Category</label>
+                  <select value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20">
+                    <option value="">{mfr.categories[0] || 'Select…'}</option>
+                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Unit</label>
+                  <select value={newProduct.unit} onChange={(e) => setNewProduct({ ...newProduct, unit: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20">
+                    <option value="piece">piece</option>
+                    <option value="bottle">bottle</option>
+                    <option value="bag">bag / sack</option>
+                    <option value="packet">packet</option>
+                    <option value="kg">kg</option>
+                    <option value="litre">litre</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Wholesale Price (RWF) *</label>
+                  <input type="number" min="1" value={newProduct.wholesalePrice} onChange={(e) => setNewProduct({ ...newProduct, wholesalePrice: e.target.value })} placeholder="1200"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Suggested Retail (RWF) *</label>
+                  <input type="number" min="1" value={newProduct.suggestedRetailPrice} onChange={(e) => setNewProduct({ ...newProduct, suggestedRetailPrice: e.target.value })} placeholder="2000"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">MOQ *</label>
+                  <input type="number" min="1" value={newProduct.moq} onChange={(e) => setNewProduct({ ...newProduct, moq: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Stock Quantity</label>
+                  <input type="number" min="0" value={newProduct.stockQuantity} onChange={(e) => setNewProduct({ ...newProduct, stockQuantity: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Product Photo URL (optional)</label>
+                <input type="url" value={newProduct.imageUrl} onChange={(e) => setNewProduct({ ...newProduct, imageUrl: e.target.value })} placeholder="https://your-site.rw/photo.jpg"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
+                <p className="text-[10px] text-gray-400 mt-1">Link to a photo of YOUR product. http(s) only.</p>
+              </div>
+              <button type="submit" className="w-full py-3 gradient-primary text-white text-sm font-bold rounded-xl hover:opacity-95 transition flex items-center justify-center gap-2 shadow-sm">
+                <Plus size={16} /> Publish Product
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============ OWNER: ADD STORY MODAL ============ */}
+      {showAddStory && isOwner && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowAddStory(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Video size={20} className="text-teal-600" /> Publish Production Story
+              </h2>
+              <button onClick={() => setShowAddStory(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleAddStory} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Story Title *</label>
+                <input type="text" value={newStory.title} onChange={(e) => setNewStory({ ...newStory, title: e.target.value })} placeholder="e.g. Inside our bottling line" maxLength={140}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Description *</label>
+                <textarea rows={3} value={newStory.description} onChange={(e) => setNewStory({ ...newStory, description: e.target.value })} placeholder="What are retailers looking at?" maxLength={500}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Video URL *</label>
+                <input type="url" value={newStory.videoUrl} onChange={(e) => setNewStory({ ...newStory, videoUrl: e.target.value })} placeholder="https://your-site.rw/factory-tour.mp4"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
+                <p className="text-[10px] text-gray-400 mt-1">YOUR OWN hosted production video (mp4/webm link). http(s) only.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Tags (comma-separated)</label>
+                <input type="text" value={newStory.tags} onChange={(e) => setNewStory({ ...newStory, tags: e.target.value })} placeholder="production, quality, kigali" maxLength={140}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
+              </div>
+              <button type="submit" className="w-full py-3 gradient-primary text-white text-sm font-bold rounded-xl hover:opacity-95 transition flex items-center justify-center gap-2 shadow-sm">
+                <Video size={16} /> Publish Story
+              </button>
+            </form>
+          </div>
         </div>
       )}
     </div>

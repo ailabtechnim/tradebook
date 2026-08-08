@@ -81,7 +81,7 @@ export default function ProductsPage() {
                   {categories.map(cat => (
                     <button key={cat.id} onClick={() => setSelectedCategory(cat.name)} className={`w-full text-left px-3 py-2 rounded-lg text-sm transition flex items-center gap-2 ${selectedCategory === cat.name ? 'bg-teal-50 text-teal-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}>
                       <span>{cat.icon}</span> {cat.name}
-                      <span className="ml-auto text-xs text-gray-400">{cat.productCount}</span>
+                      <span className="ml-auto text-xs text-gray-400">{products.filter(p => p.category === cat.name).length}</span>
                     </button>
                   ))}
                 </div>
@@ -128,8 +128,14 @@ export default function ProductsPage() {
                           {product.name}
                         </Link>
                         <div className="flex items-center gap-1 mt-1">
-                          <Star size={12} className="text-amber-400 fill-amber-400" />
-                          <span className="text-xs text-gray-600">{product.rating} ({product.reviewCount})</span>
+                          {product.reviewCount > 0 ? (
+                            <>
+                              <Star size={12} className="text-amber-400 fill-amber-400" />
+                              <span className="text-xs text-gray-600">{product.rating.toFixed(1)} ({product.reviewCount})</span>
+                            </>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">New listing</span>
+                          )}
                         </div>
                         <div className="mt-3">
                           <span className="price-wholesale text-lg">{formatPrice(product.wholesalePrice)} {product.currency}</span>
