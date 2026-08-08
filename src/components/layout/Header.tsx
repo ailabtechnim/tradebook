@@ -6,7 +6,7 @@ import { useApp } from '@/context/AppContext';
 import { Search, ShoppingCart, Bell, Menu, X, User, LogOut, ChevronDown, Globe, Heart } from 'lucide-react';
 
 export default function Header() {
-  const { user, isLoggedIn, cartCount, notifications, unreadCount, logout, setShowAuthModal, setAuthModalType, searchQuery, setSearchQuery } = useApp();
+  const { user, isLoggedIn, cartCount, notifications, unreadCount, logout, markAllAsRead, setShowAuthModal, setAuthModalType, searchQuery, setSearchQuery } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -24,7 +24,7 @@ export default function Header() {
         <div className="container-app flex justify-between items-center">
           <div className="flex items-center gap-4">
             <span>📍 Kigali, Rwanda</span>
-            <span className="hidden sm:inline">📞 +250 788 000 000</span>
+            <a href="mailto:support@tradebook.rw" className="hidden sm:inline hover:text-teal-200 transition">✉️ support@tradebook.rw</a>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => setLang(lang === 'EN' ? 'FR' : lang === 'FR' ? 'RW' : 'EN')} className="flex items-center gap-1 hover:text-teal-200 transition">
@@ -86,7 +86,7 @@ export default function Header() {
                     <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-fade-in">
                       <div className="p-3 border-b border-gray-100 flex justify-between items-center">
                         <h3 className="font-semibold text-sm">Notifications</h3>
-                        <button className="text-xs text-teal-600 hover:underline">Mark all read</button>
+                        <button onClick={markAllAsRead} className="text-xs text-teal-600 hover:underline">Mark all read</button>
                       </div>
                       <div className="max-h-80 overflow-y-auto">
                         {notifications.length === 0 ? (
@@ -126,7 +126,7 @@ export default function Header() {
                 <div className="relative">
                   <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="flex items-center gap-2 p-1.5 hover:bg-gray-100 rounded-lg transition">
                     <div className="w-8 h-8 gradient-primary rounded-full flex items-center justify-center text-white text-sm font-bold">
-                      {user?.name.charAt(0)}
+                      {user?.name?.trim() ? user.name.charAt(0).toUpperCase() : 'U'}
                     </div>
                     <span className="hidden lg:block text-sm font-medium text-gray-700 max-w-[100px] truncate">{user?.name}</span>
                     <ChevronDown size={14} className="text-gray-400" />
@@ -141,7 +141,7 @@ export default function Header() {
                       <Link href="/dashboard" className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition" onClick={() => setUserMenuOpen(false)}>
                         <User size={16} /> Dashboard
                       </Link>
-                      <Link href="/dashboard/orders" className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition" onClick={() => setUserMenuOpen(false)}>
+                      <Link href="/dashboard" className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition" onClick={() => setUserMenuOpen(false)}>
                         <ShoppingCart size={16} /> My Orders
                       </Link>
                       <hr className="my-1" />

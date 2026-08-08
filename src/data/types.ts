@@ -185,6 +185,8 @@ export interface User {
   cart: CartItem[];
   joinedDate: string;
   verified: boolean;
+  /** For manufacturer accounts: the id of the Manufacturer entity they own. */
+  manufacturerId?: string;
 }
 
 export interface CartItem {

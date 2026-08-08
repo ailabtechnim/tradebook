@@ -10,9 +10,9 @@ export default function Footer() {
       <div className="gradient-primary py-12">
         <div className="container-app text-center">
           <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">Ready to Transform Your Business?</h2>
-          <p className="text-teal-100 mb-6 max-w-lg mx-auto">Join thousands of manufacturers and retailers on TradeBook. Transparent wholesale pricing, no middlemen.</p>
+          <p className="text-teal-100 mb-6 max-w-lg mx-auto">Register your company or shop today. Transparent wholesale pricing, escrow protection, no middlemen.</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/manufacturers" className="px-6 py-3 bg-white text-teal-700 font-semibold rounded-xl hover:bg-gray-100 transition">
+            <Link href="/manufacturers/onboarding" className="px-6 py-3 bg-white text-teal-700 font-semibold rounded-xl hover:bg-gray-100 transition">
               List Your Products
             </Link>
             <Link href="/products" className="px-6 py-3 bg-teal-800 text-white font-semibold rounded-xl hover:bg-teal-900 transition border border-teal-600">
@@ -34,11 +34,8 @@ export default function Footer() {
             <p className="text-sm text-gray-400 mb-4">
               Africa&apos;s first social-commerce B2B platform. Connecting manufacturers directly with retailers through transparent wholesale pricing.
             </p>
-            <div className="flex gap-3">
-              <a href="#" className="w-9 h-9 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-teal-600 transition text-sm">f</a>
-              <a href="#" className="w-9 h-9 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-teal-600 transition text-sm">X</a>
-              <a href="#" className="w-9 h-9 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-teal-600 transition text-sm">in</a>
-              <a href="#" className="w-9 h-9 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-teal-600 transition text-sm">ig</a>
+            <div className="flex gap-3 items-center text-xs text-gray-500">
+              <a href="mailto:support@tradebook.rw" className="hover:text-teal-400 transition">✉️ support@tradebook.rw</a>
             </div>
           </div>
 
@@ -50,7 +47,7 @@ export default function Footer() {
               <li><Link href="/group-buy" className="hover:text-teal-400 transition">Group Buying</Link></li>
               <li><Link href="/manufacturers" className="hover:text-teal-400 transition">Find Manufacturers</Link></li>
               <li><Link href="/dashboard" className="hover:text-teal-400 transition">My Dashboard</Link></li>
-              <li><Link href="#" className="hover:text-teal-400 transition">Price Alerts</Link></li>
+              <li><Link href="/cart" className="hover:text-teal-400 transition">My Cart</Link></li>
             </ul>
           </div>
 
@@ -58,11 +55,11 @@ export default function Footer() {
           <div>
             <h3 className="text-white font-semibold mb-4">For Manufacturers</h3>
             <ul className="space-y-2.5 text-sm">
-              <li><Link href="/manufacturers" className="hover:text-teal-400 transition">List Products</Link></li>
-              <li><Link href="#" className="hover:text-teal-400 transition">Wholesale Dashboard</Link></li>
-              <li><Link href="#" className="hover:text-teal-400 transition">Pricing Tools</Link></li>
+              <li><Link href="/manufacturers/onboarding" className="hover:text-teal-400 transition">Register Your Factory</Link></li>
+              <li><Link href="/manufacturers/onboarding" className="hover:text-teal-400 transition">List Products</Link></li>
               <li><Link href="/stories" className="hover:text-teal-400 transition">Share Stories</Link></li>
-              <li><Link href="#" className="hover:text-teal-400 transition">Analytics</Link></li>
+              <li><Link href="/dashboard" className="hover:text-teal-400 transition">Vendor Dashboard</Link></li>
+              <li><Link href="/group-buy" className="hover:text-teal-400 transition">Group Buy Demand</Link></li>
             </ul>
           </div>
 
@@ -70,11 +67,10 @@ export default function Footer() {
           <div>
             <h3 className="text-white font-semibold mb-4">Company</h3>
             <ul className="space-y-2.5 text-sm">
-              <li><Link href="#" className="hover:text-teal-400 transition">About TradeBook</Link></li>
-              <li><Link href="#" className="hover:text-teal-400 transition">How It Works</Link></li>
-              <li><Link href="#" className="hover:text-teal-400 transition">Escrow Protection</Link></li>
-              <li><Link href="#" className="hover:text-teal-400 transition">Contact Us</Link></li>
-              <li><Link href="#" className="hover:text-teal-400 transition">Careers</Link></li>
+              <li><Link href="/" className="hover:text-teal-400 transition">About TradeBook</Link></li>
+              <li><Link href="/" className="hover:text-teal-400 transition">How It Works</Link></li>
+              <li><Link href="/checkout" className="hover:text-teal-400 transition">Escrow Protection</Link></li>
+              <li><a href="mailto:support@tradebook.rw" className="hover:text-teal-400 transition">Contact Us</a></li>
             </ul>
           </div>
         </div>
@@ -85,9 +81,9 @@ export default function Footer() {
         <div className="container-app py-4 flex flex-col md:flex-row justify-between items-center gap-3">
           <p className="text-xs text-gray-500">© 2026 TradeBook Rwanda. All rights reserved.</p>
           <div className="flex gap-4 text-xs text-gray-500">
-            <Link href="#" className="hover:text-gray-300 transition">Privacy Policy</Link>
-            <Link href="#" className="hover:text-gray-300 transition">Terms of Service</Link>
-            <Link href="#" className="hover:text-gray-300 transition">Escrow Policy</Link>
+            <Link href="/legal" className="hover:text-gray-300 transition">Privacy Policy</Link>
+            <Link href="/legal" className="hover:text-gray-300 transition">Terms of Service</Link>
+            <Link href="/legal" className="hover:text-gray-300 transition">Escrow Policy</Link>
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span>💳 MTN MoMo</span>

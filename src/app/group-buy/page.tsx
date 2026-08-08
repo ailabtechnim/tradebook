@@ -2,13 +2,42 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { groupBuys } from '@/data/mockData';
-import { Clock, MapPin, Users, Package, ArrowRight, TrendingDown, Shield, CheckCircle } from 'lucide-react';
+import { useApp } from '@/context/AppContext';
+import { Clock, MapPin, Users, Package, ArrowRight, TrendingDown, Shield, CheckCircle, ArrowLeft } from 'lucide-react';
 
 export default function GroupBuyPage() {
+  const { groupBuys, user, joinGroupBuy, showToast } = useApp();
   const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'my'>('active');
+  const [joinTarget, setJoinTarget] = useState<string | null>(null);
+  const [joinQty, setJoinQty] = useState('');
 
   const formatPrice = (price: number) => new Intl.NumberFormat('en-RW').format(price);
+
+  const visibleBuys = groupBuys.filter(gb => {
+    if (activeTab === 'active') return gb.status === 'active';
+    if (activeTab === 'completed') return gb.status === 'completed';
+    // "My Groups": anything the signed-in retailer created or participates in
+    return !!user && (gb.createdBy === user.id || gb.participants.some(p => p.userId === user.id));
+  });
+
+  const counts = {
+    active: groupBuys.filter(g => g.status === 'active').length,
+    completed: groupBuys.filter(g => g.status === 'completed').length,
+    my: user ? groupBuys.filter(g => g.createdBy === user.id || g.participants.some(p => p.userId === user.id)).length : 0,
+  };
+
+  const handleJoin = (gbId: string) => {
+    const qty = parseInt(joinQty, 10);
+    if (!qty || qty <= 0) {
+      showToast('Enter how many units you want to commit.', 'error');
+      return;
+    }
+    const ok = joinGroupBuy(gbId, qty);
+    if (ok) {
+      setJoinTarget(null);
+      setJoinQty('');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -42,9 +71,9 @@ export default function GroupBuyPage() {
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
           {[
-            { key: 'active' as const, label: 'Active Group Buys', count: groupBuys.filter(g => g.status === 'active').length },
-            { key: 'completed' as const, label: 'Completed', count: 0 },
-            { key: 'my' as const, label: 'My Groups', count: 0 },
+            { key: 'active' as const, label: 'Active Group Buys', count: counts.active },
+            { key: 'completed' as const, label: 'Completed', count: counts.completed },
+            { key: 'my' as const, label: 'My Groups', count: counts.my },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === tab.key ? 'bg-teal-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}>
@@ -53,107 +82,149 @@ export default function GroupBuyPage() {
           ))}
         </div>
 
-        {/* Group Buys */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {groupBuys.filter(g => activeTab === 'active' ? g.status === 'active' : false).map(gb => {
-            const progress = Math.round((gb.currentQuantity / gb.targetQuantity) * 100);
-            const groupPrice = Math.round(gb.wholesalePrice * (1 - gb.savingsPercent / 100));
-
-            return (
-              <div key={gb.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow">
-                {/* Header */}
-                <div className="p-5">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center text-2xl shrink-0">📦</div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-gray-900 truncate">{gb.productName}</h3>
-                      <p className="text-xs text-gray-500">by {gb.manufacturerName}</p>
-                      <div className="flex items-center gap-1 mt-1">
-                        <MapPin size={10} className="text-gray-400" />
-                        <span className="text-xs text-gray-400">{gb.location}</span>
-                      </div>
-                    </div>
-                    <div className="badge-verified text-xs">{gb.status.toUpperCase()}</div>
-                  </div>
-
-                  {/* Progress */}
-                  <div className="mb-4">
-                    <div className="flex justify-between text-sm mb-1.5">
-                      <span className="text-gray-600">{gb.currentParticipants} of {gb.minParticipants} participants</span>
-                      <span className="font-bold text-teal-600">{gb.savingsPercent}% OFF</span>
-                    </div>
-                    <div className="progress-bar">
-                      <div className="progress-bar-fill" style={{ width: `${Math.min(progress, 100)}%` }}></div>
-                    </div>
-                    <div className="flex justify-between text-xs text-gray-400 mt-1">
-                      <span>{gb.currentQuantity} / {gb.targetQuantity} units</span>
-                      <span>{progress}% complete</span>
-                    </div>
-                  </div>
-
-                  {/* Pricing */}
-                  <div className="bg-gray-50 rounded-xl p-4 mb-4">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <div className="text-xs text-gray-400 mb-0.5">Regular Wholesale</div>
-                        <div className="text-sm text-gray-500 line-through">{formatPrice(gb.wholesalePrice)} RWF</div>
-                      </div>
-                      <ArrowRight size={16} className="text-teal-600" />
-                      <div className="text-right">
-                        <div className="text-xs text-gray-400 mb-0.5">Group Price</div>
-                        <div className="text-xl font-bold text-green-600">{formatPrice(groupPrice)} RWF</div>
-                      </div>
-                    </div>
-                    <div className="text-center mt-2">
-                      <span className="text-sm font-medium text-green-600">You save {formatPrice(gb.wholesalePrice - groupPrice)} RWF per unit!</span>
-                    </div>
-                  </div>
-
-                  {/* Participants */}
-                  <div className="mb-4">
-                    <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Participants</h4>
-                    <div className="space-y-2">
-                      {gb.participants.slice(0, 3).map(p => (
-                        <div key={p.userId} className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 text-xs font-bold">{p.userName.charAt(0)}</div>
-                            <span className="text-gray-700">{p.userName}</span>
-                          </div>
-                          <span className="text-gray-500">{p.quantity} units</span>
-                        </div>
-                      ))}
-                      {gb.participants.length > 3 && (
-                        <div className="text-xs text-teal-600 font-medium">+{gb.participants.length - 3} more participants</div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Deadline */}
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-                    <Clock size={14} />
-                    <span>Ends {new Date(gb.deadline).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
-                  </div>
-
-                  {/* Action */}
-                  <button className="w-full py-3 gradient-primary text-white font-semibold rounded-xl hover:opacity-90 transition flex items-center justify-center gap-2">
-                    <CheckCircle size={18} /> Join This Group Buy
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {activeTab !== 'active' && (
+        {/* Empty state */}
+        {visibleBuys.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
             <Package size={48} className="mx-auto text-gray-300 mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {activeTab === 'completed' ? 'No completed group buys yet' : 'You haven\'t joined any group buys yet'}
+              {activeTab === 'completed'
+                ? 'No completed group buys yet'
+                : activeTab === 'my'
+                  ? (user ? 'You haven\'t joined any group buys yet' : 'Sign in to see your group buys')
+                  : 'No active group buys yet'}
             </h3>
-            <p className="text-gray-500 text-sm mb-4">Browse active group buys and start saving!</p>
-            <button onClick={() => setActiveTab('active')} className="px-6 py-2.5 gradient-primary text-white font-medium rounded-xl hover:opacity-90 transition">
-              View Active Group Buys
-            </button>
+            <p className="text-gray-500 text-sm mb-4 max-w-md mx-auto">
+              {activeTab === 'active'
+                ? 'Group buys are created by real retailers from any product page. Be the first: open a listed product and tap "Start Group Buy".'
+                : 'Browse active group buys and start saving!'}
+            </p>
+            <Link href="/products" className="inline-flex items-center gap-2 px-6 py-2.5 gradient-primary text-white font-medium rounded-xl hover:opacity-90 transition">
+              Browse Products <ArrowRight size={16} />
+            </Link>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {visibleBuys.map(gb => {
+              const progress = Math.round((gb.currentQuantity / gb.targetQuantity) * 100);
+              const groupPrice = Math.round(gb.wholesalePrice * (1 - gb.savingsPercent / 100));
+              const myEntry = user ? gb.participants.find(p => p.userId === user.id) : undefined;
+
+              return (
+                <div key={gb.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow">
+                  <div className="p-5">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center text-2xl shrink-0">📦</div>
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/products/${gb.productId}`} className="font-bold text-gray-900 hover:text-teal-700 truncate block">{gb.productName}</Link>
+                        <p className="text-xs text-gray-500">by {gb.manufacturerName}</p>
+                        <div className="flex items-center gap-1 mt-1">
+                          <MapPin size={10} className="text-gray-400" />
+                          <span className="text-xs text-gray-400">{gb.location}</span>
+                        </div>
+                      </div>
+                      <div className={`text-xs px-2 py-1 rounded-lg font-bold ${gb.status === 'active' ? 'bg-teal-50 text-teal-700' : 'bg-green-50 text-green-700'}`}>
+                        {gb.status.toUpperCase()}
+                      </div>
+                    </div>
+
+                    {/* Progress */}
+                    <div className="mb-4">
+                      <div className="flex justify-between text-sm mb-1.5">
+                        <span className="text-gray-600">{gb.currentParticipants} of {gb.minParticipants} participants</span>
+                        <span className="font-bold text-teal-600">{gb.savingsPercent}% OFF</span>
+                      </div>
+                      <div className="progress-bar">
+                        <div className="progress-bar-fill" style={{ width: `${Math.min(progress, 100)}%` }}></div>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>{gb.currentQuantity} / {gb.targetQuantity} units</span>
+                        <span>{progress}% complete</span>
+                      </div>
+                    </div>
+
+                    {/* Pricing */}
+                    <div className="bg-gray-50 rounded-xl p-4 mb-4">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="text-xs text-gray-400 mb-0.5">Regular Wholesale</div>
+                          <div className="text-sm text-gray-500 line-through">{formatPrice(gb.wholesalePrice)} RWF</div>
+                        </div>
+                        <ArrowRight size={16} className="text-teal-600" />
+                        <div className="text-right">
+                          <div className="text-xs text-gray-400 mb-0.5">Group Price</div>
+                          <div className="text-xl font-bold text-green-600">{formatPrice(groupPrice)} RWF</div>
+                        </div>
+                      </div>
+                      <div className="text-center mt-2">
+                        <span className="text-sm font-medium text-green-600">You save {formatPrice(gb.wholesalePrice - groupPrice)} RWF per unit!</span>
+                      </div>
+                    </div>
+
+                    {/* Participants */}
+                    {gb.participants.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Participants</h4>
+                        <div className="space-y-2">
+                          {gb.participants.slice(0, 3).map(p => (
+                            <div key={p.userId} className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 text-xs font-bold">{p.userName.charAt(0)}</div>
+                                <span className="text-gray-700">{p.userName}{user?.id === p.userId ? ' (you)' : ''}</span>
+                              </div>
+                              <span className="text-gray-500">{p.quantity} units</span>
+                            </div>
+                          ))}
+                          {gb.participants.length > 3 && (
+                            <div className="text-xs text-teal-600 font-medium">+{gb.participants.length - 3} more participants</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Deadline */}
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+                      <Clock size={14} />
+                      <span>Ends {new Date(gb.deadline).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                    </div>
+
+                    {/* Join action */}
+                    {gb.status === 'active' && (
+                      joinTarget === gb.id ? (
+                        <div className="space-y-2 animate-fade-in">
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={joinQty}
+                              onChange={(e) => setJoinQty(e.target.value)}
+                              placeholder="Units to commit"
+                              className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                            />
+                            <button onClick={() => handleJoin(gb.id)} className="px-4 py-2.5 gradient-primary text-white text-sm font-bold rounded-xl hover:opacity-90 transition">
+                              Commit
+                            </button>
+                          </div>
+                          <button onClick={() => { setJoinTarget(null); setJoinQty(''); }} className="w-full text-center text-xs text-gray-400 hover:text-gray-600">
+                            <ArrowLeft size={11} className="inline mr-1" />Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setJoinTarget(gb.id)} className="w-full py-3 gradient-primary text-white font-semibold rounded-xl hover:opacity-90 transition flex items-center justify-center gap-2">
+                          <CheckCircle size={18} /> {myEntry ? `Add More Units (you have ${myEntry.quantity})` : 'Join This Group Buy'}
+                        </button>
+                      )
+                    )}
+
+                    {gb.status === 'completed' && (
+                      <div className="bg-green-50 border border-green-100 rounded-xl p-3 flex items-center gap-2 text-xs text-green-800">
+                        <CheckCircle size={15} className="text-green-600 shrink-0" />
+                        <span><strong>Target reached!</strong> All participants get the group price of {formatPrice(groupPrice)} RWF/unit.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
