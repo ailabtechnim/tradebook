@@ -1,16 +1,38 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Shield, Truck, Lock, Package, ArrowLeft } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Shield, Truck, Lock, Package, ArrowLeft, Store, AlertCircle } from 'lucide-react';
 
 export default function CartPage() {
-  const { cart, removeFromCart, updateCartQuantity, clearCart, cartTotal, cartCount } = useApp();
+  const { cart, removeFromCart, updateCartQuantity, clearCart, cartTotal, cartCount, isLoggedIn, setShowAuthModal, setAuthModalType, showToast } = useApp();
+  const router = useRouter();
+  const [showCheckoutGuard, setShowCheckoutGuard] = useState(false);
 
   const formatPrice = (price: number) => new Intl.NumberFormat('en-RW').format(price);
   const escrowFee = Math.round(cartTotal * 0.015);
   const total = cartTotal + escrowFee;
+
+  const handleProceedToCheckout = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!isLoggedIn) {
+      setShowCheckoutGuard(true);
+      return;
+    }
+    router.push('/checkout');
+  };
+
+  const handleGuardConfirm = () => {
+    setShowCheckoutGuard(false);
+    setAuthModalType('register');
+    setShowAuthModal(true);
+    showToast('Wholesaler Portal Access required — please register to unlock checkout.', 'info');
+    // After auth, checkout page will still guard, but also allow direct navigation
+    // We still push to checkout so they see the dedicated Wholesaler Portal Access wall there
+    router.push('/checkout');
+  };
 
   if (cart.length === 0) {
     return (
@@ -98,9 +120,19 @@ export default function CartPage() {
                 </div>
               </div>
 
-              <Link href="/checkout" className="block w-full py-3 gradient-primary text-white font-semibold rounded-xl text-center hover:opacity-90 transition">
+              {!isLoggedIn && (
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 mb-3 flex gap-2">
+                  <Store size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-800 leading-relaxed"><strong>Wholesaler Portal Access required.</strong> You must sign up with shop name, email, phone, location & password before checkout unlocks.</p>
+                </div>
+              )}
+
+              <button onClick={handleProceedToCheckout} className="block w-full py-3 gradient-primary text-white font-semibold rounded-xl text-center hover:opacity-90 transition">
                 Proceed to Checkout
-              </Link>
+              </button>
+              {!isLoggedIn && (
+                <p className="text-center text-[11px] text-gray-400 mt-2">Clicking will prompt Wholesaler Portal Access</p>
+              )}
 
               {/* Trust badges */}
               <div className="flex justify-center gap-4 mt-4 text-gray-400">
@@ -112,6 +144,45 @@ export default function CartPage() {
           </div>
         </div>
       </div>
+
+      {/* Wholesaler Guard Modal */}
+      {showCheckoutGuard && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => e.target===e.currentTarget && setShowCheckoutGuard(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up">
+            <div className="gradient-primary p-6 text-white relative">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><Store size={20} /></div>
+                <div>
+                  <h3 className="font-bold text-lg">Wholesaler Portal Access</h3>
+                  <p className="text-teal-100 text-xs">Authentication wall — Retail buyers only</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex gap-3">
+                <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-amber-900">Sign-up required before checkout</p>
+                  <p className="text-[11px] text-amber-700 leading-relaxed mt-1">To unlock shipping & MTN MoMo / Airtel Money escrow payments, please register your shop with <strong>shop name, email, phone, location and password</strong>. This secures your buyer protection.</p>
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-xs text-gray-600">
+                <p className="font-bold text-gray-900 flex items-center gap-1"><Shield size={14} className="text-teal-600" /> What unlocks after sign-up:</p>
+                <ul className="space-y-1 ml-4 list-disc text-[11px]">
+                  <li>Pre-filled shipping form with your shop details</li>
+                  <li>Escrow payment options: MTN MoMo, Airtel Money, Cards & Bank</li>
+                  <li>Order tracking & buyer-protection dashboard</li>
+                </ul>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowCheckoutGuard(false)} className="flex-1 py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition text-sm">Cancel</button>
+                <button onClick={handleGuardConfirm} className="flex-1 py-3 gradient-primary text-white font-semibold rounded-xl hover:opacity-95 transition text-sm">Sign Up to Continue</button>
+              </div>
+              <p className="text-center text-[11px] text-gray-400">You will be redirected to secure checkout portal</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
